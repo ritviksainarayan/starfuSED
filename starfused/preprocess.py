@@ -135,8 +135,7 @@ class Photometry:
         av_ebv_obs = interp1d(fitswave, fits_av_ebv, kind='linear', bounds_error=False, fill_value="extrapolate")(df['sed_wave'].values)
         a_lambda = ebv * av_ebv_obs
 
-        # correction factor = 10**(0.4 * A_lambda)
-
+        # correction factor = 10**(0.4 * a_lambda)
         df_corrected = df.copy()
         df_corrected['sed_flux']  *= 10**(0.4 * a_lambda)
         df_corrected['sed_eflux'] *= 10**(0.4 * a_lambda)
