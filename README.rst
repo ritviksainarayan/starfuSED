@@ -1,4 +1,5 @@
-# starfuSED
+starfuSED
+=======================
 
 A python package for (neural network, maybe) and Bayesian SED fitting for main-sequence stars. 
 
