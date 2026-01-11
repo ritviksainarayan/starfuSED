@@ -11,8 +11,3 @@ python:
   install:
     - requirements: docs/requirements.txt
 ```
-
-**Minimal `docs/requirements.txt`:**
-```
-sphinx>=5.0
-sphinx-rtd-theme
