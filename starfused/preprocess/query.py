@@ -19,7 +19,7 @@ class PhotometricQuery:
 
         Parameters
         ----------
-        name : str, optional (Gaia DR3 573956069112683392)
+        name : str, optional
             Source name.
 
         ra : float, optional
