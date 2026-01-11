@@ -84,7 +84,7 @@ class Photometry:
         
         return df
     
-    def dust_correction(df, extinction='mw', rv=3.1, dustmap='SandF'):
+    def dust_correction(df, extinction='mw', dustmap='SandF'):
         """
         Apply dust extinction correction to photometric data. 
         
