@@ -1,4 +1,4 @@
-.. image:: starfused.png
+.. image:: docs/source/starfused.png
   :align: center
   :width: 200
   :alt: starfuSED
