@@ -1,6 +1,6 @@
 .. image:: docs/source/starfused.png
   :align: center
-  :width: 200
+  :width: 600
   :alt: starfuSED
   :target: #
 =======================
