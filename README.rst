@@ -2,7 +2,7 @@
   :align: center
   :width: 200
   :alt: starfuSED
-  :target:#
+  :target: #
 =======================
 
 A python package for (neural network, maybe) and Bayesian SED fitting for main-sequence stars. 
