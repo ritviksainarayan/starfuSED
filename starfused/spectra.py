@@ -16,6 +16,10 @@ class BaseModel(ABC):
     """
     Abstract base class for stellar atmosphere model grids.
 
+    This class provides a common interface for loading stellar atmosphere models
+    from different grids (ATLAS9, Phoenix, MARCS, etc.). Subclasses must implement
+    the abstract methods to handle grid-specific logic.
+
     Parameters
     ----------
     base_url : str
@@ -172,8 +176,9 @@ class CKModel(BaseModel):
 
 
     def __init__(self):
-        """Initialize CKModel with STScI repository URL."""
+        """Initialize CKModel with STScI repository URL and empty cache."""
         super().__init__("https://archive.stsci.edu/hlsps/reference-atlases/cdbs/grid/ck04models/")
+        self._temperature_cache = {}  # Cache: {dirname: [list of available temperatures]}
 
     def _fehtodir(self, metallicity):
         """
@@ -187,7 +192,7 @@ class CKModel(BaseModel):
         Returns
         -------
         str
-            Directory name (e.g., 'ckp00' for [M/H]=0.0, 'ckm25' for [M/H]=-2.5).
+            Directory name.
         """
 
         dirval = int(np.abs(metallicity) * 10)
@@ -233,10 +238,7 @@ class CKModel(BaseModel):
         
     def find_model(self, teff, logg, metallicity):
         """
-        Find the closest CK04 model by searching the online directory.
-
-        This method uses regex pattern matching on the directory listing to discover
-        available models dynamically, rather than relying on hardcoded grid points.
+        Find the closest CK04 model.
 
         Parameters
         ----------
@@ -267,18 +269,26 @@ class CKModel(BaseModel):
 
         closest_metallicity = min(self.METALLICITIES, key=lambda x: abs(x - metallicity))
         dirname = self._fehtodir(closest_metallicity)
-        dir_url = f"{self.base_url}/{dirname}"
 
-        response = requests.get(dir_url)
-        response.raise_for_status()
+        # Check cache first
+        if dirname not in self._temperature_cache:
+            # Fetch directory listing only if not cached
+            dir_url = f"{self.base_url}/{dirname}"
+            response = requests.get(dir_url)
+            response.raise_for_status()
 
-        matches = re.findall(rf'{dirname}_(\d+)\.fits', response.text)
+            matches = re.findall(rf'{dirname}_(\d+)\.fits', response.text)
 
+            if not matches:
+                raise ValueError(f"No models found in {dirname}")
 
-        if not matches:
-            raise ValueError(f"No models found in {dirname}")
+            # Cache the available temperatures
+            self._temperature_cache[dirname] = [int(m) for m in matches]
 
-        available_teffs = [int(m) for m in matches]
+        # Get temperatures from cache
+        available_teffs = self._temperature_cache[dirname]
+
+        # Find closest temperature
         closest_teff = min(available_teffs, key=lambda x: abs(x - teff))
 
         return {
@@ -361,6 +371,218 @@ class CKModel(BaseModel):
             'wavelength': wavelength,
             'flux': flux
         })
+    
+class PhoenixModel(BaseModel):
+    """
+    Phoenix stellar atmosphere model grid.
+
+    This class provides access to the Phoenix model atmospheres hosted at STScI.
+    The grid dynamically discovers available temperatures from the online repository
+    and accepts any log g value between 0.0 and 5.0 (in 0.5 increments).
+    """
+
+    METALLICITIES = [-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, 0.0, 0.3, 0.5]
+    LOGG_RANGE = (0.0, 5.0)
+
+
+    def __init__(self):
+        """Initialize PhoenixModel with STScI repository URL and empty cache."""
+        super().__init__("https://archive.stsci.edu/hlsps/reference-atlases/cdbs/grid/phoenix")
+        self._temperature_cache = {}  
+
+    def _fehtodir(self, metallicity):
+        """
+        Convert metallicity to directory name format.
+
+        Parameters
+        ----------
+        metallicity : float
+            Metallicity [M/H] in dex.
+
+        Returns
+        -------
+        str
+            Directory name.
+        """
+
+        dirval = int(np.abs(metallicity) * 10)
+
+        if metallicity > 0:
+            return f"phoenixp{dirval:02d}"
+        else:
+            return f"phoenixm{dirval:02d}"
+
+    def validate_parameters(self, teff, logg, metallicity):
+        """
+        Validate stellar parameters against Phoenix grid ranges.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin (will be validated against available models).
+        logg : float
+            Surface gravity (0.0-5.0 in 0.5 steps).
+        metallicity : float
+            Metallicity (must match available values).
+
+        Returns
+        -------
+        bool
+            True if all parameters are valid.
+
+        Raises
+        ------
+        ValueError
+            If any parameter is outside the grid range.
+        """
+
+        if not self.LOGG_RANGE[0] <= logg <= self.LOGG_RANGE[1]:
+            raise ValueError(f"logg {logg} is out of range {self.LOGG_RANGE}")
+
+        if metallicity < min(self.METALLICITIES) or metallicity > max(self.METALLICITIES):
+            raise ValueError(f"Metallicity {metallicity} is out of range [{min(self.METALLICITIES)}, {max(self.METALLICITIES)}]")
+
+        return True
+
+    def find_model(self, teff, logg, metallicity):
+        """
+        Find the closest Phoenix model by discovering available temperatures.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity (log g).
+        metallicity : float
+            Metallicity [M/H] in dex.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - 'teff': Closest available Teff
+            - 'logg': Requested log g (matched within FITS file)
+            - 'metallicity': Closest available metallicity
+            - 'dirname': Directory name for this metallicity
+            - 'filename': FITS filename
+
+        Raises
+        ------
+        ValueError
+            If no models are found in the directory.
+        """
+
+        self.validate_parameters(teff, logg, metallicity)
+
+        # Find closest metallicity
+        closest_metallicity = min(self.METALLICITIES, key=lambda x: abs(x - metallicity))
+        dirname = self._fehtodir(closest_metallicity)
+
+        # Check cache first
+        if dirname not in self._temperature_cache:
+            # Fetch directory listing only if not cached
+            dir_url = f"{self.base_url}/{dirname}"
+            response = requests.get(dir_url)
+            response.raise_for_status()
+
+            # Extract all temperature values from filenames
+            matches = re.findall(rf'{dirname}_(\d+)\.fits', response.text)
+
+            if not matches:
+                raise ValueError(f"No models found in {dirname}")
+
+            # Cache the available temperatures
+            self._temperature_cache[dirname] = [int(m) for m in matches]
+
+        # Get temperatures from cache
+        available_teffs = self._temperature_cache[dirname]
+
+        # Find closest temperature
+        closest_teff = min(available_teffs, key=lambda x: abs(x - teff))
+
+        return {
+            'teff': closest_teff,
+            'logg': logg,  # Will be matched in FITS file
+            'metallicity': closest_metallicity,
+            'dirname': dirname,
+            'filename': f"{dirname}_{closest_teff}.fits"
+        }
+
+    def construct_url(self, teff, logg, metallicity):
+        """
+        Construct full URL to Phoenix model FITS file.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity (log g).
+        metallicity : float
+            Metallicity [M/H] in dex.
+
+        Returns
+        -------
+        str
+            Complete URL to the FITS file.
+        """
+
+        params = self.find_model(teff, logg, metallicity)
+        return f"{self.base_url}/{params['dirname']}/{params['filename']}"
+
+    def parse_fits(self, fitsfile, logg):
+        """
+        Parse Phoenix FITS file and extract spectrum for requested log g.
+
+        Phoenix FITS files contain spectra for multiple log g values stored as
+        separate columns (g00, g05, g10, ..., g50), similar to CK04 models.
+
+        Parameters
+        ----------
+        fitsfile : file-like object
+            FITS file content (BytesIO object).
+        logg : float
+            Surface gravity to extract. If exact match not found, uses closest available.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with columns:
+            - 'wavelength': Wavelength in Angstroms
+            - 'flux': Flux in erg/s/cm^2/A
+        """
+
+        model_data = fits.open(fitsfile)
+
+        data = model_data[1].data
+        wavelength = data['WAVELENGTH']  # Angstroms
+
+        # Column format: g00, g05, g10, g15, g20, g25, g30, g35, g40, g45, g50
+
+        logg_col = f"g{int(round(logg * 10)):02d}"
+
+        if logg_col in data.dtype.names:
+            flux = data[logg_col]
+        else:
+            # Find closest available log g
+            available_loggs = []
+            for colname in data.dtype.names:
+                if colname.startswith('g') and colname[1:].isdigit():
+                    available_loggs.append((int(colname[1:]) / 10, colname))
+
+            _, closest_col = min(available_loggs, key=lambda x: abs(x[0] - logg))
+            flux = data[closest_col]
+
+        # Convert to native byte order to avoid endianness issues
+        wavelength = np.asarray(wavelength, dtype=np.float64)
+        flux = np.asarray(flux, dtype=np.float32)
+
+        return pd.DataFrame({
+            'wavelength': wavelength,
+            'flux': flux
+        })
+
 
 class StellarModel:
     """
@@ -369,8 +591,6 @@ class StellarModel:
     Parameters
     ----------
     grid : str, optional
-        Model grid name. Default is 'ck04'.
-        Available options: 'ck04'
 
     Raises
     ------
@@ -380,6 +600,7 @@ class StellarModel:
 
     AVALIABLE_MODELS = {
         'ck04': CKModel,
+        'phoenix': PhoenixModel,
     }
 
     def __init__(self, grid='ck04'):
@@ -430,3 +651,4 @@ class StellarModel:
         """
 
         return self.model.find_model(teff, logg, metallicity)
+
