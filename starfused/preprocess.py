@@ -13,6 +13,7 @@ import requests
 from astropy.io import fits
 from io import BytesIO
 from scipy.interpolate import interp1d
+from urllib.parse import quote
 
 EXTINCTION_CURVES = {
     'mw'        : 'milkyway_diffuse_001.fits',
@@ -58,7 +59,8 @@ class Photometry:
         """
 
         if name is not None:
-            df = Table.read(f"https://vizier.cds.unistra.fr/viz-bin/sed?-c={name.replace(' ', '')}&-c.rs={radius}").to_pandas().replace(np.nan, 0.0).dropna(subset='sed_filter').drop(columns=['_ID','_time','_etime'])
+            encoded_name = quote(name, safe='')
+            df = Table.read(f"https://vizier.cds.unistra.fr/viz-bin/sed?-c={encoded_name}&-c.rs={radius}").to_pandas().replace(np.nan, 0.0).dropna(subset='sed_filter').drop(columns=['_ID','_time','_etime'])
         elif ra is not None and dec is not None:
             df = Table.read(f"https://vizier.cds.unistra.fr/viz-bin/sed?-c={ra}+{dec}&-c.rs={radius}").to_pandas().replace(np.nan, 0.0).dropna(subset='sed_filter').drop(columns=['_ID','_time','_etime'])
         else:
@@ -135,7 +137,8 @@ class Photometry:
         av_ebv_obs = interp1d(fitswave, fits_av_ebv, kind='linear', bounds_error=False, fill_value="extrapolate")(df['sed_wave'].values)
         a_lambda = ebv * av_ebv_obs
 
-        # correction factor = 10**(0.4 * a_lambda)
+        # correction factor = 10**(0.4 * A_lambda)
+
         df_corrected = df.copy()
         df_corrected['sed_flux']  *= 10**(0.4 * a_lambda)
         df_corrected['sed_eflux'] *= 10**(0.4 * a_lambda)
