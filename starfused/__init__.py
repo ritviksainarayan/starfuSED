@@ -4,7 +4,7 @@ starfused - SED fitting.
 """
 
 from .preprocess import Photometry
-from .spectra import StellarModel, BaseModel, CKModel, PhoenixModel
+from .spectra import StellarModel, BaseModel, CKModel, PhoenixModel, KoesterModel
 
 __version__ = "0.1.0"
 
@@ -14,4 +14,5 @@ __all__ = [
     'BaseModel',
     'CKModel',
     'PhoenixModel',
+    'KoesterModel',
 ]
