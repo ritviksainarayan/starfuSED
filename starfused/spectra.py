@@ -1,13 +1,8 @@
 import pandas as pd
 import numpy as np
-from astropy.table import Table
-import astropy.units as u
-from astropy.constants import c
-from astropy.coordinates import SkyCoord
 import requests
 from astropy.io import fits
 from io import BytesIO
-from scipy.interpolate import interp1d
 from abc import ABC, abstractmethod
 import re
 
@@ -17,8 +12,7 @@ class BaseModel(ABC):
     Abstract base class for stellar atmosphere model grids.
 
     This class provides a common interface for loading stellar atmosphere models
-    from different grids (ATLAS9, Phoenix, MARCS, etc.). Subclasses must implement
-    the abstract methods to handle grid-specific logic.
+    from different grids.
 
     Parameters
     ----------
@@ -161,10 +155,6 @@ class BaseModel(ABC):
 class CKModel(BaseModel):
     """
     Castelli-Kurucz 2004 ATLAS9 stellar atmosphere model grid.
-
-    This class provides access to the Castelli & Kurucz (2004) ATLAS9 model atmospheres
-    hosted at STScI. The grid covers a wide range of stellar parameters suitable for
-    modeling main-sequence through evolved stars.
     """
 
     METALLICITIES = [-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.2, 0.5]
@@ -375,10 +365,6 @@ class CKModel(BaseModel):
 class PhoenixModel(BaseModel):
     """
     Phoenix stellar atmosphere model grid.
-
-    This class provides access to the Phoenix model atmospheres hosted at STScI.
-    The grid dynamically discovers available temperatures from the online repository
-    and accepts any log g value between 0.0 and 5.0 (in 0.5 increments).
     """
 
     METALLICITIES = [-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, 0.0, 0.3, 0.5]
@@ -446,7 +432,7 @@ class PhoenixModel(BaseModel):
 
     def find_model(self, teff, logg, metallicity):
         """
-        Find the closest Phoenix model by discovering available temperatures.
+        Find the closest Phoenix model.
 
         Parameters
         ----------
@@ -535,9 +521,6 @@ class PhoenixModel(BaseModel):
         """
         Parse Phoenix FITS file and extract spectrum for requested log g.
 
-        Phoenix FITS files contain spectra for multiple log g values stored as
-        separate columns (g00, g05, g10, ..., g50), similar to CK04 models.
-
         Parameters
         ----------
         fitsfile : file-like object
@@ -584,6 +567,230 @@ class PhoenixModel(BaseModel):
         })
 
 
+class KoesterModel(BaseModel):
+    """
+    Koester DA White Dwarf model grid from the Spanish Virtual Observatory. 
+    """
+
+    TEFF_VALUES = list(range(5000, 40000, 250)) + list(range(40000, 80001, 1000))
+    LOGG_VALUES = [6.5, 6.75, 7.0, 7.25, 7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25, 9.5]
+
+    def __init__(self):
+        """Initialize KoesterModel with SVO repository URL and empty cache."""
+        super().__init__("http://svo2.cab.inta-csic.es/theory/newov2")
+        self._fid_cache = {}  # Cache: {(teff, logg): fid}
+        self._session = None
+
+    def _get_session(self):
+        """Get or create a requests session for persistent connections."""
+        if self._session is None:
+            self._session = requests.Session()
+        return self._session
+
+    def validate_parameters(self, teff, logg, metallicity=None):
+        """
+        Validate stellar parameters against Koester grid ranges.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin (5000-80000 K).
+        logg : float
+            Surface gravity (6.5-9.5).
+        metallicity : float, optional
+            Ignored for Koester models.
+
+        Returns
+        -------
+        bool
+            True if all parameters are valid.
+
+        Raises
+        ------
+        ValueError
+            If any parameter is outside the grid range.
+        """
+        if not 5000 <= teff <= 80000:
+            raise ValueError(f"Teff {teff}K is out of range (5000, 80000)")
+        if not 6.5 <= logg <= 9.5:
+            raise ValueError(f"logg {logg} is out of range (6.5, 9.5)")
+        return True
+
+    def _query_fid(self, teff, logg):
+        """
+        Query SVO to get the file ID for a specific Teff/logg combination.
+
+        Parameters
+        ----------
+        teff : int
+            Effective temperature in Kelvin (must be a grid point).
+        logg : float
+            Surface gravity (must be a grid point).
+
+        Returns
+        -------
+        str
+            File ID for downloading the spectrum.
+        """
+        cache_key = (teff, logg)
+        if cache_key in self._fid_cache:
+            return self._fid_cache[cache_key]
+
+        session = self._get_session()
+        url = f"{self.base_url}/index.php"
+
+        # Format logg 
+        logg_str = str(logg) if logg != int(logg) else str(int(logg))
+
+        data = {
+            "models": ",koester2",
+            "params[koester2][teff][min]": str(teff),
+            "params[koester2][teff][max]": str(teff),
+            "params[koester2][logg][min]": logg_str,
+            "params[koester2][logg][max]": logg_str,
+            "nres": "10",
+            "boton": "Search"
+        }
+
+        response = session.post(url, data=data)
+        response.raise_for_status()
+
+        # Extract fid from response
+        matches = re.findall(r'fid=(\d+)', response.text)
+        if not matches:
+            raise ValueError(f"No model found for Teff={teff}, logg={logg}")
+
+        fid = matches[0]
+        self._fid_cache[cache_key] = fid
+        return fid
+
+    def find_model(self, teff, logg, metallicity=None):
+        """
+        Find the closest Koester model to the requested parameters.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity (log g).
+        metallicity : float, optional
+            Ignored for Koester models (pure H atmospheres).
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - 'teff': Closest available Teff
+            - 'logg': Closest available log g
+            - 'fid': File ID for downloading
+        """
+        self.validate_parameters(teff, logg, metallicity)
+
+        # Find closest Teff
+        closest_teff = min(self.TEFF_VALUES, key=lambda x: abs(x - teff))
+
+        # Find closest logg
+        closest_logg = min(self.LOGG_VALUES, key=lambda x: abs(x - logg))
+
+        # Get the file ID
+        fid = self._query_fid(closest_teff, closest_logg)
+
+        return {
+            'teff': closest_teff,
+            'logg': closest_logg,
+            'metallicity': None,  # Pure H atmosphere
+            'fid': fid
+        }
+
+    def construct_url(self, teff, logg, metallicity=None):
+        """
+        Construct full URL to Koester model ASCII file.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity (log g).
+        metallicity : float, optional
+            Ignored for Koester models.
+
+        Returns
+        -------
+        str
+            Complete URL to the ASCII spectrum file.
+        """
+        params = self.find_model(teff, logg, metallicity)
+        return f"{self.base_url}/ssap.php?model=koester2&fid={params['fid']}&format=ascii"
+
+    def load_model(self, teff, logg, metallicity=None):
+        """
+        Load a Koester DA white dwarf model spectrum.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity (log g).
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with columns 'wavelength' (Angstroms) and 'flux' (erg/s/cm^2/A).
+        """
+        params = self.find_model(teff, logg, metallicity)
+        print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}")
+
+        url = self.construct_url(params['teff'], params['logg'])
+
+        try:
+            session = self._get_session()
+            response = session.get(url)
+            response.raise_for_status()
+
+            return self._parse_ascii(response.text)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model from {url}: {e}")
+
+    def parse_fits(self, content, logg):
+        """For ABC but unused in this context."""
+        return self._parse_ascii(content)
+
+    def _parse_ascii(self, content):
+        """
+        Parse Koester ASCII spectrum data.
+
+        Parameters
+        ----------
+        content : str
+            ASCII content from SVO.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with columns 'wavelength' and 'flux'.
+        """
+        lines = content.strip().split('\n')
+
+        wavelengths = []
+        fluxes = []
+
+        for line in lines:
+            if line.startswith('#') or not line.strip():
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                wavelengths.append(float(parts[0]))
+                fluxes.append(float(parts[1]))
+
+        return pd.DataFrame({
+            'wavelength': wavelengths,
+            'flux': fluxes
+        })
+
+
 class StellarModel:
     """
     Unified interface for loading stellar atmosphere models from different grids.
@@ -601,6 +808,7 @@ class StellarModel:
     AVALIABLE_MODELS = {
         'ck04': CKModel,
         'phoenix': PhoenixModel,
+        'koester': KoesterModel,
     }
 
     def __init__(self, grid='ck04'):
@@ -651,4 +859,3 @@ class StellarModel:
         """
 
         return self.model.find_model(teff, logg, metallicity)
-
