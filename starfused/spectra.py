@@ -791,6 +791,268 @@ class KoesterModel(BaseModel):
         })
 
 
+class BTSettlModel(BaseModel):
+    """
+    BT-Settl model grid from the Spanish Virtual Observatory.
+
+    BT-Settl models are designed for cool stars and brown dwarfs, including
+    cloud formation and settling. They cover very low temperatures suitable
+    for L, T, and Y dwarfs.
+
+    Notes
+    -----
+    - Teff range: 400 - 70000 K (covers brown dwarfs to hot stars)
+    - log g range: -0.5 - 6.0
+    - Metallicity: -4.0 to +0.5 dex
+    - Includes cloud/dust formation physics
+    - Note: Not all parameter combinations are available in the grid
+
+    References
+    ----------
+    Allard, F., Homeier, D., & Freytag, B. 2012, RSPTA, 370, 2765
+    """
+
+    # Grid parameters (from SVO interface)
+    TEFF_RANGE = (400, 70000)
+    LOGG_RANGE = (-0.5, 6.0)
+    METALLICITIES = [-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5]
+
+    def __init__(self):
+        """Initialize BTSettlModel with SVO repository URL and empty cache."""
+        super().__init__("http://svo2.cab.inta-csic.es/theory/newov2")
+        self._fid_cache = {}  # Cache: {(teff, logg, metallicity): fid}
+        self._session = None
+
+    def _get_session(self):
+        """Get or create a requests session for persistent connections."""
+        if self._session is None:
+            self._session = requests.Session()
+        return self._session
+
+    def validate_parameters(self, teff, logg, metallicity=0.0):
+        """
+        Validate stellar parameters against BT-Settl grid ranges.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin (400-7000 K).
+        logg : float
+            Surface gravity (2.5-5.5).
+        metallicity : float, optional
+            Metallicity [M/H] in dex (-2.5 to +0.5).
+
+        Returns
+        -------
+        bool
+            True if all parameters are valid.
+
+        Raises
+        ------
+        ValueError
+            If any parameter is outside the grid range.
+        """
+        if not self.TEFF_RANGE[0] <= teff <= self.TEFF_RANGE[1]:
+            raise ValueError(f"Teff {teff}K is out of range {self.TEFF_RANGE}")
+        if not self.LOGG_RANGE[0] <= logg <= self.LOGG_RANGE[1]:
+            raise ValueError(f"logg {logg} is out of range {self.LOGG_RANGE}")
+        if metallicity < min(self.METALLICITIES) or metallicity > max(self.METALLICITIES):
+            raise ValueError(f"Metallicity {metallicity} is out of range [{min(self.METALLICITIES)}, {max(self.METALLICITIES)}]")
+        return True
+
+    def _query_fid(self, teff, logg, metallicity):
+        """
+        Query SVO to get the file ID for a specific parameter combination.
+
+        Parameters
+        ----------
+        teff : int
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity.
+        metallicity : float
+            Metallicity [M/H].
+
+        Returns
+        -------
+        str
+            File ID for downloading the spectrum.
+        """
+        cache_key = (teff, logg, metallicity)
+        if cache_key in self._fid_cache:
+            return self._fid_cache[cache_key]
+
+        session = self._get_session()
+        url = f"{self.base_url}/index.php"
+
+        # Format parameters
+        logg_str = str(logg) if logg != int(logg) else str(int(logg))
+        met_str = str(metallicity) if metallicity != int(metallicity) else str(int(metallicity))
+
+        data = {
+            "models": ",bt-settl",
+            "params[bt-settl][teff][min]": str(teff),
+            "params[bt-settl][teff][max]": str(teff),
+            "params[bt-settl][logg][min]": logg_str,
+            "params[bt-settl][logg][max]": logg_str,
+            "params[bt-settl][meta][min]": met_str,
+            "params[bt-settl][meta][max]": met_str,
+            "nres": "10",
+            "boton": "Search"
+        }
+
+        response = session.post(url, data=data)
+        response.raise_for_status()
+
+        # Extract fid from response
+        matches = re.findall(r'fid=(\d+)', response.text)
+        if not matches:
+            raise ValueError(f"No model found for Teff={teff}, logg={logg}, [M/H]={metallicity}")
+
+        fid = matches[0]
+        self._fid_cache[cache_key] = fid
+        return fid
+
+    def find_model(self, teff, logg, metallicity=0.0):
+        """
+        Find the closest BT-Settl model to the requested parameters.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity (log g).
+        metallicity : float, optional
+            Metallicity [M/H] in dex (default: 0.0).
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - 'teff': Closest available Teff
+            - 'logg': Closest available log g
+            - 'metallicity': Closest available metallicity
+            - 'fid': File ID for downloading
+        """
+        self.validate_parameters(teff, logg, metallicity)
+
+        # BT-Settl Teff grid: 400-2000 (100K steps), 2000-7000 (100K steps)
+        if teff < 2000:
+            teff_grid = list(range(400, 2100, 100))
+        else:
+            teff_grid = list(range(2000, 7100, 100))
+
+        # Find closest Teff
+        closest_teff = min(teff_grid, key=lambda x: abs(x - teff))
+
+        # logg grid: -0.5 to 6.0 in 0.5 steps (per SVO website)
+        logg_grid = [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
+        closest_logg = min(logg_grid, key=lambda x: abs(x - logg))
+
+        # Find closest metallicity
+        closest_met = min(self.METALLICITIES, key=lambda x: abs(x - metallicity))
+
+        # Get the file ID
+        fid = self._query_fid(closest_teff, closest_logg, closest_met)
+
+        return {
+            'teff': closest_teff,
+            'logg': closest_logg,
+            'metallicity': closest_met,
+            'fid': fid
+        }
+
+    def construct_url(self, teff, logg, metallicity=0.0):
+        """
+        Construct full URL to BT-Settl model ASCII file.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin.
+        logg : float
+            Surface gravity (log g).
+        metallicity : float, optional
+            Metallicity [M/H] in dex.
+
+        Returns
+        -------
+        str
+            Complete URL to the ASCII spectrum file.
+        """
+        params = self.find_model(teff, logg, metallicity)
+        return f"{self.base_url}/ssap.php?model=bt-settl&fid={params['fid']}&format=ascii"
+
+    def load_model(self, teff, logg, metallicity=0.0):
+        """
+        Load a BT-Settl brown dwarf/cool star model spectrum.
+
+        Parameters
+        ----------
+        teff : float
+            Effective temperature in Kelvin (400-7000 K).
+        logg : float
+            Surface gravity (log g) in cgs units.
+        metallicity : float, optional
+            Metallicity [M/H] in dex (default: 0.0).
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with columns 'wavelength' (Angstroms) and 'flux' (erg/s/cm^2/A).
+        """
+        params = self.find_model(teff, logg, metallicity)
+        print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}, [M/H]={params['metallicity']}")
+
+        url = self.construct_url(params['teff'], params['logg'], params['metallicity'])
+
+        try:
+            session = self._get_session()
+            response = session.get(url)
+            response.raise_for_status()
+
+            return self._parse_ascii(response.text)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model from {url}: {e}")
+
+    def parse_fits(self, content, logg):
+        """Required by ABC but not used - BT-Settl uses ASCII format from SVO."""
+        return self._parse_ascii(content)
+
+    def _parse_ascii(self, content):
+        """
+        Parse BT-Settl ASCII spectrum data.
+
+        Parameters
+        ----------
+        content : str
+            ASCII content from SVO (whitespace-delimited wavelength, flux).
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with columns 'wavelength' and 'flux'.
+        """
+        lines = content.strip().split('\n')
+
+        wavelengths = []
+        fluxes = []
+
+        for line in lines:
+            if line.startswith('#') or not line.strip():
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                wavelengths.append(float(parts[0]))
+                fluxes.append(float(parts[1]))
+
+        return pd.DataFrame({
+            'wavelength': wavelengths,
+            'flux': fluxes
+        })
+
+
 class StellarModel:
     """
     Unified interface for loading stellar atmosphere models from different grids.
@@ -809,6 +1071,7 @@ class StellarModel:
         'ck04': CKModel,
         'phoenix': PhoenixModel,
         'koester': KoesterModel,
+        'bt-settl': BTSettlModel,
     }
 
     def __init__(self, grid='ck04'):
@@ -859,3 +1122,6 @@ class StellarModel:
         """
 
         return self.model.find_model(teff, logg, metallicity)
+
+
+
