@@ -91,7 +91,7 @@ class BaseModel(ABC):
         """
         pass
 
-    def load_model(self, teff, logg, metallicity):
+    def load_model(self, teff, logg, metallicity, verbose=True):
         """
         Load a stellar atmosphere model spectrum.
 
@@ -106,6 +106,8 @@ class BaseModel(ABC):
             Surface gravity (log g) in cgs units.
         metallicity : float
             Metallicity [M/H] in dex.
+        verbose : bool, optional
+            Print loading messages (default: True).
 
         Returns
         -------
@@ -119,7 +121,8 @@ class BaseModel(ABC):
         """
 
         params = self.find_model(teff, logg, metallicity)
-        print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}, [M/H]={params['metallicity']}")
+        if verbose:
+            print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}, [M/H]={params['metallicity']}")
 
         url = self.construct_url(params['teff'], params['logg'], params['metallicity'])
 
@@ -724,7 +727,7 @@ class KoesterModel(BaseModel):
         params = self.find_model(teff, logg, metallicity)
         return f"{self.base_url}/ssap.php?model=koester2&fid={params['fid']}&format=ascii"
 
-    def load_model(self, teff, logg, metallicity=None):
+    def load_model(self, teff, logg, metallicity=None, verbose=True):
         """
         Load a Koester DA white dwarf model spectrum.
 
@@ -734,6 +737,8 @@ class KoesterModel(BaseModel):
             Effective temperature in Kelvin.
         logg : float
             Surface gravity (log g).
+        verbose : bool, optional
+            Print loading messages (default: True).
 
         Returns
         -------
@@ -741,7 +746,8 @@ class KoesterModel(BaseModel):
             DataFrame with columns 'wavelength' (Angstroms) and 'flux' (erg/s/cm^2/A).
         """
         params = self.find_model(teff, logg, metallicity)
-        print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}")
+        if verbose:
+            print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}")
 
         url = self.construct_url(params['teff'], params['logg'])
 
@@ -984,7 +990,7 @@ class BTSettlModel(BaseModel):
         params = self.find_model(teff, logg, metallicity)
         return f"{self.base_url}/ssap.php?model=bt-settl&fid={params['fid']}&format=ascii"
 
-    def load_model(self, teff, logg, metallicity=0.0):
+    def load_model(self, teff, logg, metallicity=0.0, verbose=True):
         """
         Load a BT-Settl brown dwarf/cool star model spectrum.
 
@@ -996,6 +1002,8 @@ class BTSettlModel(BaseModel):
             Surface gravity (log g) in cgs units.
         metallicity : float, optional
             Metallicity [M/H] in dex (default: 0.0).
+        verbose : bool, optional
+            Print loading messages (default: True).
 
         Returns
         -------
@@ -1003,7 +1011,8 @@ class BTSettlModel(BaseModel):
             DataFrame with columns 'wavelength' (Angstroms) and 'flux' (erg/s/cm^2/A).
         """
         params = self.find_model(teff, logg, metallicity)
-        print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}, [M/H]={params['metallicity']}")
+        if verbose:
+            print(f"Loading model: Teff={params['teff']}K, log_g={params['logg']}, [M/H]={params['metallicity']}")
 
         url = self.construct_url(params['teff'], params['logg'], params['metallicity'])
 
@@ -1081,7 +1090,7 @@ class StellarModel:
 
         self.model = self.AVALIABLE_MODELS[grid.lower()]()
 
-    def load_model(self, teff, logg, metallicity):
+    def load_model(self, teff, logg, metallicity, verbose=True):
         """
         Load a stellar atmosphere model spectrum.
 
@@ -1093,6 +1102,8 @@ class StellarModel:
             Surface gravity (log g) in cgs units.
         metallicity : float
             Metallicity [M/H] in dex.
+        verbose : bool, optional
+            Print loading messages (default: True).
 
         Returns
         -------
@@ -1100,7 +1111,7 @@ class StellarModel:
             DataFrame with columns 'wavelength' (Angstroms) and 'flux' (erg/s/cm^2/A).
         """
 
-        return self.model.load_model(teff, logg, metallicity)
+        return self.model.load_model(teff, logg, metallicity, verbose=verbose)
 
     def find_model(self, teff, logg, metallicity):
         """

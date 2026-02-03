@@ -43,11 +43,15 @@ def plot_single_sed(
     show_residuals=True,
     fill_under=False,
     fill_alpha=0.3,
+    source_label=None,
     ax=None,
     fig=None,
     data_kwargs=None,
     model_kwargs=None,
     fill_kwargs=None,
+    residual_mode='sigma',
+    residual_offset=0.0,
+    residual_ylabel=None,
 ):
     """
     Plot a single star SED fit result.
@@ -86,6 +90,15 @@ def plot_single_sed(
         Additional kwargs passed to plot for model spectrum.
     fill_kwargs : dict, optional
         Additional kwargs passed to fill_between for model fill.
+    residual_mode : str, optional
+        How to compute residuals. Options:
+        - 'sigma' (default): (obs - model) / error, normalized by uncertainty
+        - 'absolute': (obs - model) - offset, raw distance from offset
+    residual_offset : float, optional
+        When residual_mode='absolute', sets symmetric y-limits to (-offset, +offset).
+        If 0.0, uses residual_ylim instead. Ignored when residual_mode='sigma'.
+    residual_ylabel : str, optional
+        Custom y-axis label for residuals. If None, uses default labels based on mode.
 
     Returns
     -------
@@ -136,9 +149,11 @@ def plot_single_sed(
     ax1.errorbar(obs_wave, obs_flux, yerr=obs_eflux, **data_defaults)
 
     # Default model plotting options
+    if source_label is None:
+        source_label = f"Model (Teff={result['teff']}K, log g={result['logg']})"
     model_defaults = dict(
         color='r', alpha=0.7, linewidth=1,
-        label=f"Model (Teff={result['teff']}K, log g={result['logg']})"
+        label=source_label
     )
     model_defaults.update(model_kwargs)
 
@@ -184,16 +199,30 @@ def plot_single_sed(
     # Plot residuals
     if ax2 is not None:
         model_flux_interp = np.interp(obs_wave, model_wave, model_flux)
-        residuals = (obs_flux - model_flux_interp) / obs_eflux
+
+        if residual_mode == 'sigma':
+            residuals = (obs_flux - model_flux_interp) / obs_eflux
+            yerr = 1
+            default_ylabel = r'Residuals ($\sigma$)'
+            ylim = residual_ylim
+        else:  # 'absolute'
+            residuals = obs_flux - model_flux_interp
+            yerr = obs_eflux
+            default_ylabel = 'Residual'
+            # Use residual_offset to set symmetric y-limits
+            if residual_offset != 0.0:
+                ylim = (-residual_offset, residual_offset)
+            else:
+                ylim = residual_ylim
 
         ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
         ax2.errorbar(
-            obs_wave, residuals, yerr=1,
+            obs_wave, residuals, yerr=yerr,
             fmt='o', markersize=8, color='black', capsize=3
         )
         ax2.set_xlabel(r'Wavelength ($\mathring{\rm A}$)')
-        ax2.set_ylabel(r'Residuals ($\sigma$)')
-        ax2.set_ylim(residual_ylim)
+        ax2.set_ylabel(residual_ylabel if residual_ylabel is not None else default_ylabel)
+        ax2.set_ylim(ylim)
 
         return fig, (ax1, ax2)
 
@@ -226,6 +255,9 @@ def plot_binary_sed(
     combined_kwargs=None,
     source1_fill_kwargs=None,
     source2_fill_kwargs=None,
+    residual_mode='sigma',
+    residual_offset=0.0,
+    residual_ylabel=None,
 ):
     """
     Plot a binary SED fit result with individual components.
@@ -282,6 +314,15 @@ def plot_binary_sed(
         Additional kwargs passed to fill_between for source 1.
     source2_fill_kwargs : dict, optional
         Additional kwargs passed to fill_between for source 2.
+    residual_mode : str, optional
+        How to compute residuals. Options:
+        - 'sigma' (default): (obs - model) / error, normalized by uncertainty
+        - 'absolute': (obs - model) - offset, raw distance from offset
+    residual_offset : float, optional
+        When residual_mode='absolute', sets symmetric y-limits to (-offset, +offset).
+        If 0.0, uses residual_ylim instead. Ignored when residual_mode='sigma'.
+    residual_ylabel : str, optional
+        Custom y-axis label for residuals. If None, uses default labels based on mode.
 
     Returns
     -------
@@ -424,16 +465,30 @@ def plot_binary_sed(
     if ax2 is not None:
         # Interpolate combined flux to observed wavelengths
         combined_flux_interp = np.interp(obs_wave, wave_grid, combined_flux_grid)
-        residuals = (obs_flux - combined_flux_interp) / obs_eflux
+
+        if residual_mode == 'sigma':
+            residuals = (obs_flux - combined_flux_interp) / obs_eflux
+            yerr = 1
+            default_ylabel = r'Residuals ($\sigma$)'
+            ylim = residual_ylim
+        else:  # 'absolute'
+            residuals = obs_flux - combined_flux_interp
+            yerr = obs_eflux
+            default_ylabel = 'Residual'
+            # Use residual_offset to set symmetric y-limits
+            if residual_offset != 0.0:
+                ylim = (-residual_offset, residual_offset)
+            else:
+                ylim = residual_ylim
 
         ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
         ax2.errorbar(
-            obs_wave, residuals, yerr=1,
+            obs_wave, residuals, yerr=yerr,
             fmt='o', markersize=8, color='black', capsize=3
         )
         ax2.set_xlabel(r'Wavelength ($\mathring{\rm A}$)')
-        ax2.set_ylabel(r'Residuals ($\sigma$)')
-        ax2.set_ylim(residual_ylim)
+        ax2.set_ylabel(residual_ylabel if residual_ylabel is not None else default_ylabel)
+        ax2.set_ylim(ylim)
 
         return fig, (ax1, ax2)
 
