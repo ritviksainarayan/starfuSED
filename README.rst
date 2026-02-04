@@ -17,13 +17,13 @@ starfuSED
 Key Features
 ------------
 
-- **In-Memory Processing**: No need to download large dust maps or spectral model grids locally
+- **In-Memory Processing**: No need to download large dust maps or spectral model grids locally.
 - **Multiple Stellar Model Grids**: Unified interface to four atmospheric model grids:
 
-  - Castelli-Kurucz 2004 modes
-  - PHOENIX stellar atmosphere models
-  - Koester DA white dwarf models
-  - BT-Settl models for cool stars and brown dwarfs
+  - Castelli-Kurucz 2004 modes.
+  - PHOENIX stellar atmosphere models.
+  - Koester DA white dwarf models.
+  - BT-Settl models for cool stars and brown dwarfs.
 
 - **Automatic Photometry Retrieval**: Query VizieR SED service by object name or coordinates. 
 - **Dust Extinction Correction**: Multiple extinction curves and dust maps supported. 
