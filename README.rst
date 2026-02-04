@@ -9,7 +9,7 @@ starfuSED
 
 **Spectral Energy Distribution fitting for stars**
 
-*starfuSED* is a Python package for SED (Spectral Energy Distribution) fitting of main-sequence stars and binary stellar systems. It provides a complete workflow from photometry retrieval to model fitting and visualization, all with in-memory processing.
+*starfuSED* is a Python package for SED (Spectral Energy Distribution) fitting of single and binary stellar systems. It provides a complete workflow from photometry retrieval to model fitting and visualization, all with in-memory processing.
 
 .. image:: https://img.shields.io/badge/status-in%20development-yellow
    :alt: Development Status
