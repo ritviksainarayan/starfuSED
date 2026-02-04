@@ -62,9 +62,9 @@ Network Requirements
 
 *starfuSED* requires an internet connection to:
 
-1. Query photometry from VizieR SED service
-2. Download stellar atmosphere models from STScI and SVO
-3. Retrieve dust extinction values from IRSA
+1. Query photometry from VizieR SED service.
+2. Download stellar atmosphere models from STScI and SVO.
+3. Retrieve dust extinction values from IRSA.
 
 All data is downloaded on-demand and cached in memory during a session. No persistent local storage of large files is required.
 

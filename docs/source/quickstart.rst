@@ -190,11 +190,6 @@ The fit result dictionary contains:
    print(f"Chi-squared: {result['chi2']:.2f}")
    print(f"Reduced chi-squared: {result['reduced_chi2']:.2f}")
 
-   # Uncertainties (if computed)
-   if 'errors' in result:
-       teff_err = result['errors']['teff_err']
-       print(f"Teff = {result['teff']} +{teff_err[1]:.0f}/-{teff_err[0]:.0f} K")
-
    # Best-fit model spectrum
    spectrum = result['spectrum']
    print(spectrum.head())

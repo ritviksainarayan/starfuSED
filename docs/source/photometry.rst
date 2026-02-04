@@ -36,36 +36,19 @@ Query by Coordinates
        radius=2     # arcseconds
    )
 
-Supported Filters
-~~~~~~~~~~~~~~~~~
+Filtering by Instrument
+~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``filters`` parameter accepts a list of instrument/survey names. Available options include:
+The ``filters`` parameter accepts a list of strings used to filter results by matching against the ``sed_filter`` column. VizieR aggregates photometry from many surveys - use filters to select which ones you want.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 20 30 50
+.. code-block:: python
 
-   * - Filter Name
-     - Bands
-     - Wavelength Range
-   * - ``GALEX``
-     - FUV, NUV
-     - 1350-2800 Å (UV)
-   * - ``UVOT``
-     - UVW2, UVM2, UVW1, U, B, V
-     - 1900-5500 Å (UV/Optical)
-   * - ``SDSS``
-     - u, g, r, i, z
-     - 3000-11000 Å (Optical)
-   * - ``Gaia``
-     - G, BP, RP
-     - 3300-10500 Å (Optical)
-   * - ``2MASS``
-     - J, H, Ks
-     - 1.2-2.2 μm (Near-IR)
-   * - ``WISE``
-     - W1, W2, W3, W4
-     - 3.4-22 μm (Mid-IR)
+   # Common filter examples
+   filters=['GALEX', 'SDSS', '2MASS', 'WISE']  # Multi-band SED
+   filters=['Gaia']                             # Just Gaia photometry
+   filters=['Johnson', 'Cousins']               # Classical photometric systems
+
+The matching is case-sensitive and uses substring matching, so ``'SDSS'`` will match ``'SDSS:g'``, ``'SDSS:r'``, etc.
 
 Output Format
 ~~~~~~~~~~~~~

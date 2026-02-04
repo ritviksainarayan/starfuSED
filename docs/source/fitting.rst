@@ -22,8 +22,6 @@ The fitting process uses chi-squared minimization:
 
    R = sqrt(norm) × d
 
-4. **Uncertainty Estimation**: Using Δχ² = 1 method
-
 Single Star Fitting
 -------------------
 
@@ -105,8 +103,7 @@ For better precision, use adaptive grid refinement:
    result = fitter.fit_adaptive(
        n_refine=2,        # Number of refinement iterations
        refine_factor=4,   # Step size reduction per iteration
-       coarse_factor=4,   # Initial coarsening factor
-       compute_errors=True
+       coarse_factor=4    # Initial coarsening factor
    )
 
 The adaptive method:
@@ -115,7 +112,6 @@ The adaptive method:
 2. Finds approximate best-fit
 3. Refines grid around best-fit (steps ÷ refine_factor)
 4. Repeats n_refine times
-5. Computes uncertainties from Δχ² = 1 contour
 
 Result Dictionary
 ~~~~~~~~~~~~~~~~~
@@ -136,12 +132,7 @@ Result Dictionary
        'reduced_chi2': 1.2,       # Reduced chi-squared
        'n_data': 15,              # Number of data points
        'n_params': 1,             # Number of free parameters
-       'distance_pc': 50,         # Distance used
-       'errors': {                # Only if compute_errors=True
-           'teff_err': (250, 250),
-           'logg_err': (0.5, 0.5),
-           'radius_rsun_err': (0.05, 0.05)
-       }
+       'distance_pc': 50          # Distance used
    }
 
 Binary System Fitting
@@ -230,8 +221,7 @@ Binary Result Dictionary
        'chi2': 12.5,
        'reduced_chi2': 1.1,
        'combined_flux': array,
-       'distance_pc': 100,
-       'errors': {...}  # If compute_errors=True
+       'distance_pc': 100
    }
 
 Convenience Functions

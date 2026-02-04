@@ -9,7 +9,7 @@ starfuSED
 
 **Spectral Energy Distribution fitting for stars**
 
-*starfuSED* is a Python package for SED (Spectral Energy Distribution) fitting of main-sequence stars and binary stellar systems. It provides a complete workflow from photometry retrieval to model fitting and visualization, all with in-memory processing -- no need to download large dust maps or spectral model grids locally.
+*starfuSED* is a Python package for SED (Spectral Energy Distribution) fitting of single and binary stellar systems. It provides a complete workflow from photometry retrieval to model fitting and visualization, all with in-memory processing.
 
 .. note::
 
@@ -18,17 +18,18 @@ starfuSED
 Key Features
 ------------
 
-- **In-Memory Processing**: Queries photometry and loads stellar models on-demand via HTTP, eliminating the need for large local data files
-- **Multiple Stellar Model Grids**: Unified interface to four different atmospheric model grids:
+- **In-Memory Processing**: No need to download large dust maps or spectral model grids locally.
+- **Multiple Stellar Model Grids**: Unified interface to four atmospheric model grids:
 
-  - Castelli-Kurucz 2004 (CK04) ATLAS9 models
-  - PHOENIX stellar atmosphere models
-  - Koester DA white dwarf models
-  - BT-Settl models for cool stars and brown dwarfs
+  - Castelli-Kurucz 2004 models.
+  - PHOENIX stellar atmosphere models.
+  - Koester DA white dwarf models.
+  - BT-Settl models for cool stars and brown dwarfs.
 
-- **Photometry Handling**: Query VizieR SED service by object name or coordinates, with automatic flux conversion and dust extinction correction
-- **Single and Binary SED Fitting**: Chi-squared minimization with adaptive grid refinement and uncertainty estimation via the delta-chi-squared method
-- **Publication-Ready Plotting**: Customizable SED plots with residual panels, filter labels, and component visualization for binary systems
+- **Automatic Photometry Retrieval**: Query VizieR SED service by object name or coordinates.
+- **Dust Extinction Correction**: Multiple extinction curves and dust maps supported.
+- **Single and Binary SED Fitting**: Chi-squared minimization with adaptive grid refinement.
+- **Publication-Ready Plotting**: Customizable SED plots with residual panels.
 
 Quick Example
 -------------
@@ -87,25 +88,15 @@ Documentation
 
    api
 
-Supported Instruments
----------------------
-
-The package supports photometry from major surveys including:
-
-- **UV**: GALEX (FUV, NUV), Swift/UVOT
-- **Optical**: SDSS (ugriz), Gaia (G, BP, RP)
-- **Near-IR**: 2MASS (J, H, Ks)
-- **Mid-IR**: WISE (W1, W2, W3, W4)
-
 Acknowledgments
 ---------------
 
 *starfuSED* relies on data and services from:
 
-- `VizieR SED Service <https://vizier.cds.unistra.fr/>`_ for photometric data
-- `STScI CDBS Archive <https://archive.stsci.edu/>`_ for Castelli-Kurucz and PHOENIX models
-- `Spanish Virtual Observatory <http://svo2.cab.inta-csic.es/>`_ for Koester and BT-Settl models
-- `IRSA Dust Service <https://irsa.ipac.caltech.edu/applications/DUST/>`_ for extinction values
+- `VizieR SED Service <https://vizier.cds.unistra.fr/>`_ for photometric data.
+- `STScI CDBS Archive <https://archive.stsci.edu/>`_ for Castelli-Kurucz and PHOENIX models.
+- `Spanish Virtual Observatory <https://svo2.cab.inta-csic.es/theory/newov2/index.php>`_ for Koester and BT-Settl models.
+- `IRSA Dust Service <https://irsa.ipac.caltech.edu/applications/DUST/>`_ for extinction values.
 
 Indices and tables
 ==================

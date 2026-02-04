@@ -127,7 +127,7 @@ Koester White Dwarf Models
 
 Koester models are pure hydrogen (DA) white dwarf atmospheres, ideal for fitting hot compact objects.
 
-**Source**: `Spanish Virtual Observatory <http://svo2.cab.inta-csic.es/theory/newov2/>`_
+**Source**: `Spanish Virtual Observatory <https://svo2.cab.inta-csic.es/theory/newov2/index.php>`_
 
 **Parameter Grid**:
 
@@ -153,7 +153,7 @@ BT-Settl Models
 
 BT-Settl models include cloud formation and dust settling physics, making them ideal for very cool objects like brown dwarfs.
 
-**Source**: `Spanish Virtual Observatory <http://svo2.cab.inta-csic.es/theory/newov2/>`_
+**Source**: `Spanish Virtual Observatory <https://svo2.cab.inta-csic.es/theory/newov2/index.php>`_
 
 **Reference**: Allard, Homeier & Freytag (2012)
 
