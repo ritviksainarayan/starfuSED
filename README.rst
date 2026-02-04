@@ -11,9 +11,8 @@ starfuSED
 
 *starfuSED* is a Python package for SED (Spectral Energy Distribution) fitting of main-sequence stars and binary stellar systems. It provides a complete workflow from photometry retrieval to model fitting and visualization, all with in-memory processing.
 
-.. image:: https://readthedocs.org/projects/starfused/badge/?version=latest
-   :target: https://starfused.readthedocs.io/en/latest/?badge=latest
-   :alt: Documentation Status
+.. image:: https://img.shields.io/badge/status-in%20development-yellow
+   :alt: Development Status
 
 Key Features
 ------------
@@ -21,16 +20,15 @@ Key Features
 - **In-Memory Processing**: No need to download large dust maps or spectral model grids locally
 - **Multiple Stellar Model Grids**: Unified interface to four atmospheric model grids:
 
-  - Castelli-Kurucz 2004 (CK04) ATLAS9 models
+  - Castelli-Kurucz 2004 modes
   - PHOENIX stellar atmosphere models
   - Koester DA white dwarf models
   - BT-Settl models for cool stars and brown dwarfs
 
-- **Automatic Photometry Retrieval**: Query VizieR SED service by object name or coordinates
-- **Dust Extinction Correction**: Multiple extinction curves and dust maps supported
-- **Single and Binary SED Fitting**: Chi-squared minimization with adaptive grid refinement
-- **Uncertainty Estimation**: Delta-chi-squared method for 1-sigma confidence intervals
-- **Publication-Ready Plotting**: Customizable SED plots with residual panels
+- **Automatic Photometry Retrieval**: Query VizieR SED service by object name or coordinates. 
+- **Dust Extinction Correction**: Multiple extinction curves and dust maps supported. 
+- **Single and Binary SED Fitting**: Chi-squared minimization with adaptive grid refinement. 
+- **Publication-Ready Plotting**: Customizable SED plots with residual panels. 
 
 Installation
 ------------
@@ -77,14 +75,6 @@ Quick Start
    result = fitter.fit_adaptive()
    fig, axes = plot_single_sed(result, phot)
 
-Supported Instruments
----------------------
-
-- **UV**: GALEX (FUV, NUV), Swift/UVOT
-- **Optical**: SDSS (ugriz), Gaia (G, BP, RP)
-- **Near-IR**: 2MASS (J, H, Ks)
-- **Mid-IR**: WISE (W1, W2, W3, W4)
-
 Documentation
 -------------
 
@@ -119,5 +109,5 @@ This package uses data from:
 
 - `VizieR SED Service <https://vizier.cds.unistra.fr/>`_
 - `STScI CDBS Archive <https://archive.stsci.edu/>`_
-- `Spanish Virtual Observatory <http://svo2.cab.inta-csic.es/>`_
+- `Spanish Virtual Observatory <https://svo2.cab.inta-csic.es/theory/newov2/index.php>`_
 - `IRSA Dust Service <https://irsa.ipac.caltech.edu/applications/DUST/>`_
