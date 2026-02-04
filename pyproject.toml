@@ -1,1 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
+[project]
+name = "starfused"
+version = "0.1.0"
+description = "SED fitting for stars and binary stellar systems"
+readme = "README.rst"
+license = {text = "MIT"}
+authors = [
+    {name = "Ritvik Sai Narayan", email = ""}
+]
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+keywords = ["astronomy", "SED", "stellar", "photometry", "fitting"]
+
+dependencies = [
+    "numpy>=1.20.0",
+    "pandas>=1.3.0",
+    "scipy>=1.7.0",
+    "matplotlib>=3.4.0",
+    "requests>=2.25.0",
+    "astropy>=5.0",
+    "astroquery>=0.4.6",
+]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7.1.0",
+    "sphinx-rtd-theme>=1.3.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.urls]
+Documentation = "https://starfused.readthedocs.io/"
+Repository = "https://github.com/ritviksainarayan/starfuSED"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["starfused*"]
