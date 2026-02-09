@@ -343,13 +343,6 @@ Setting Parameter Ranges
 - Use adaptive fitting to efficiently search large parameter spaces
 - Check that best-fit is not at edge of grid (suggests wrong range)
 
-Interpreting Chi-Squared
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-- **Reduced χ² ≈ 1**: Good fit
-- **Reduced χ² >> 1**: Poor fit or underestimated uncertainties
-- **Reduced χ² << 1**: Overestimated uncertainties or overfitting
-
 API Reference
 -------------
 
