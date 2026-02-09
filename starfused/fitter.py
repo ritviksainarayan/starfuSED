@@ -138,6 +138,71 @@ class SEDFitter:
         """Perform the SED fit. Must be implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement fit()")
 
+    def _run_mc(self, n_iter, sigma_clip, seed):
+        """
+        Run Monte Carlo perturbation loop for uncertainty estimation.
+
+        Perturbs observed fluxes by their uncertainties (truncated normal
+        within ±sigma_clip), re-fits each perturbed dataset using the full
+        parameter grid, and returns the list of successful fit results.
+
+        Requires a prior call to fit() or fit_adaptive() so that self.result
+        is populated.
+
+        Parameters
+        ----------
+        n_iter : int
+            Number of Monte Carlo iterations.
+        sigma_clip : float
+            Maximum perturbation in units of sigma (e.g. 3 for ±3σ).
+        seed : int or None
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        list of dict
+            Successful fit results from each MC iteration.
+        """
+        if self.result is None:
+            raise RuntimeError(
+                "No fit result found. Call fit() or fit_adaptive() before fit_mc()."
+            )
+
+        rng = np.random.default_rng(seed)
+        orig_flux = self.obs_flux.copy()
+        orig_df_flux = self.photometry_df['sed_flux'].values.copy()
+        orig_verbose = self.verbose
+
+        mc_results = []
+        self.verbose = False
+        print_interval = max(1, n_iter // 10)
+
+        try:
+            for i in range(n_iter):
+                if orig_verbose and (i + 1) % print_interval == 0:
+                    print(f"  MC iteration {i + 1}/{n_iter}")
+
+                # Truncated normal perturbation
+                z = rng.standard_normal(len(orig_flux))
+                z = np.clip(z, -sigma_clip, sigma_clip)
+                perturbed = orig_flux + z * self.obs_eflux
+
+                self.obs_flux = perturbed
+                self.photometry_df['sed_flux'] = perturbed
+
+                try:
+                    result = self.fit()
+                    mc_results.append(result)
+                except RuntimeError:
+                    pass  # Skip failed fits
+        finally:
+            # Always restore original data
+            self.obs_flux = orig_flux
+            self.photometry_df['sed_flux'] = orig_df_flux
+            self.verbose = orig_verbose
+
+        return mc_results
+
     def _compute_delta_chi2_errors(self, chi2_grid, param_grid, best_idx, delta_chi2=1.0):
         """
         Compute 1-sigma errors from chi2 surface using Δχ² method.
@@ -557,6 +622,96 @@ class SingleSEDFitter(SEDFitter):
                 print(f"  log g   = {self.result['logg']}")
                 print(f"  Radius  = {radii['radius_rsun']:.4f} R_sun")
             print(f"  Reduced chi2 = {reduced_chi2:.2f}")
+            print(f"{'='*60}")
+
+        return self.result
+
+    def fit_mc(self, n_iter=100, sigma_clip=3, seed=None):
+        """
+        Estimate uncertainties via Monte Carlo perturbation of observed fluxes.
+
+        Requires a prior call to fit() or fit_adaptive(). Perturbs the observed
+        fluxes by their uncertainties (truncated normal within ±sigma_clip σ),
+        re-fits each perturbed dataset using the full parameter grid, and
+        reports asymmetric error bounds from the distribution of fit results.
+
+        Parameters
+        ----------
+        n_iter : int, optional
+            Number of Monte Carlo iterations (default: 100).
+        sigma_clip : float, optional
+            Maximum perturbation in units of sigma (default: 3).
+        seed : int or None, optional
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        dict
+            The existing self.result augmented with:
+            - 'mc_errors': dict with asymmetric error bounds
+                - 'teff_err': (lower, upper)
+                - 'logg_err': (lower, upper)
+                - 'radius_rsun_err': (lower, upper)
+                - 'radius_rearth_err': (lower, upper)
+                - 'radius_rjup_err': (lower, upper)
+                - 'n_iter': number of successful iterations
+                - 'n_failed': number of failed iterations
+            - 'mc_distributions': dict with raw parameter arrays
+                - 'teff', 'logg', 'radius_rsun', 'radius_rearth', 'radius_rjup'
+        """
+        if self.result is None:
+            raise RuntimeError(
+                "No fit result found. Call fit() or fit_adaptive() before fit_mc()."
+            )
+
+        best = self.result.copy()
+
+        if self.verbose:
+            print(f"\nRunning {n_iter} Monte Carlo iterations...")
+
+        mc_results = self._run_mc(n_iter, sigma_clip, seed)
+
+        if len(mc_results) == 0:
+            raise RuntimeError("All MC iterations failed. Check parameter ranges.")
+
+        # Extract parameter distributions
+        teff_dist = np.array([r['teff'] for r in mc_results])
+        logg_dist = np.array([r['logg'] for r in mc_results])
+        r_rsun_dist = np.array([r['radius_rsun'] for r in mc_results])
+        r_rearth_dist = np.array([r['radius_rearth'] for r in mc_results])
+        r_rjup_dist = np.array([r['radius_rjup'] for r in mc_results])
+
+        # Asymmetric error bounds (range of MC distribution = 3σ)
+        self.result['mc_errors'] = {
+            'teff_err': (best['teff'] - teff_dist.min(),
+                         teff_dist.max() - best['teff']),
+            'logg_err': (best['logg'] - logg_dist.min(),
+                         logg_dist.max() - best['logg']),
+            'radius_rsun_err': (best['radius_rsun'] - r_rsun_dist.min(),
+                                r_rsun_dist.max() - best['radius_rsun']),
+            'radius_rearth_err': (best['radius_rearth'] - r_rearth_dist.min(),
+                                  r_rearth_dist.max() - best['radius_rearth']),
+            'radius_rjup_err': (best['radius_rjup'] - r_rjup_dist.min(),
+                                r_rjup_dist.max() - best['radius_rjup']),
+            'n_iter': len(mc_results),
+            'n_failed': n_iter - len(mc_results),
+        }
+
+        self.result['mc_distributions'] = {
+            'teff': teff_dist,
+            'logg': logg_dist,
+            'radius_rsun': r_rsun_dist,
+            'radius_rearth': r_rearth_dist,
+            'radius_rjup': r_rjup_dist,
+        }
+
+        if self.verbose:
+            err = self.result['mc_errors']
+            print(f"\n{'='*60}")
+            print(f"Monte Carlo Uncertainties ({err['n_iter']}/{n_iter} iterations succeeded):")
+            print(f"  Teff    = {best['teff']} (+{err['teff_err'][1]:.0f}/-{err['teff_err'][0]:.0f}) K")
+            print(f"  log g   = {best['logg']:.2f} (+{err['logg_err'][1]:.2f}/-{err['logg_err'][0]:.2f})")
+            print(f"  Radius  = {best['radius_rsun']:.4f} (+{err['radius_rsun_err'][1]:.4f}/-{err['radius_rsun_err'][0]:.4f}) R_sun")
             print(f"{'='*60}")
 
         return self.result
@@ -1114,6 +1269,97 @@ class BinarySEDFitter(SEDFitter):
                 print(f"    Radius  = {s2_radii['radius_rsun']:.4f} R_sun")
 
             print(f"  Combined Reduced chi2 = {reduced_chi2:.2f}")
+            print(f"{'='*60}")
+
+        return self.result
+
+    def fit_mc(self, n_iter=100, sigma_clip=3, seed=None):
+        """
+        Estimate uncertainties via Monte Carlo perturbation of observed fluxes.
+
+        Requires a prior call to fit() or fit_adaptive(). Perturbs the observed
+        fluxes by their uncertainties (truncated normal within ±sigma_clip σ),
+        re-fits each perturbed dataset using the full parameter grid, and
+        reports asymmetric error bounds from the distribution of fit results.
+
+        Parameters
+        ----------
+        n_iter : int, optional
+            Number of Monte Carlo iterations (default: 100).
+        sigma_clip : float, optional
+            Maximum perturbation in units of sigma (default: 3).
+        seed : int or None, optional
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        dict
+            The existing self.result augmented with:
+            - 'mc_errors': dict with asymmetric error bounds for each source
+                - 's1_teff_err', 's1_logg_err', 's1_radius_rsun_err', etc.
+                - 's2_teff_err', 's2_logg_err', 's2_radius_rsun_err', etc.
+                - 'n_iter': number of successful iterations
+                - 'n_failed': number of failed iterations
+            - 'mc_distributions': dict with raw parameter arrays
+        """
+        if self.result is None:
+            raise RuntimeError(
+                "No fit result found. Call fit() or fit_adaptive() before fit_mc()."
+            )
+
+        best = {
+            's1_teff': self.result['source1']['teff'],
+            's1_logg': self.result['source1']['logg'],
+            's1_radius_rsun': self.result['source1']['radius_rsun'],
+            's1_radius_rearth': self.result['source1']['radius_rearth'],
+            's1_radius_rjup': self.result['source1']['radius_rjup'],
+            's2_teff': self.result['source2']['teff'],
+            's2_logg': self.result['source2']['logg'],
+            's2_radius_rsun': self.result['source2']['radius_rsun'],
+            's2_radius_rearth': self.result['source2']['radius_rearth'],
+            's2_radius_rjup': self.result['source2']['radius_rjup'],
+        }
+
+        if self.verbose:
+            print(f"\nRunning {n_iter} Monte Carlo iterations...")
+
+        mc_results = self._run_mc(n_iter, sigma_clip, seed)
+
+        if len(mc_results) == 0:
+            raise RuntimeError("All MC iterations failed. Check parameter ranges.")
+
+        # Extract parameter distributions
+        dists = {}
+        for prefix, src_key in [('s1', 'source1'), ('s2', 'source2')]:
+            dists[f'{prefix}_teff'] = np.array([r[src_key]['teff'] for r in mc_results])
+            dists[f'{prefix}_logg'] = np.array([r[src_key]['logg'] for r in mc_results])
+            dists[f'{prefix}_radius_rsun'] = np.array([r[src_key]['radius_rsun'] for r in mc_results])
+            dists[f'{prefix}_radius_rearth'] = np.array([r[src_key]['radius_rearth'] for r in mc_results])
+            dists[f'{prefix}_radius_rjup'] = np.array([r[src_key]['radius_rjup'] for r in mc_results])
+
+        # Asymmetric error bounds
+        mc_errors = {
+            'n_iter': len(mc_results),
+            'n_failed': n_iter - len(mc_results),
+        }
+        for key, dist in dists.items():
+            mc_errors[f'{key}_err'] = (best[key] - dist.min(), dist.max() - best[key])
+
+        self.result['mc_errors'] = mc_errors
+        self.result['mc_distributions'] = dists
+
+        if self.verbose:
+            err = mc_errors
+            print(f"\n{'='*60}")
+            print(f"Monte Carlo Uncertainties ({err['n_iter']}/{n_iter} iterations succeeded):")
+            print(f"  Source 1 ({self.source1_params['modelname']}):")
+            print(f"    Teff    = {best['s1_teff']} (+{err['s1_teff_err'][1]:.0f}/-{err['s1_teff_err'][0]:.0f}) K")
+            print(f"    log g   = {best['s1_logg']:.2f} (+{err['s1_logg_err'][1]:.2f}/-{err['s1_logg_err'][0]:.2f})")
+            print(f"    Radius  = {best['s1_radius_rsun']:.4f} (+{err['s1_radius_rsun_err'][1]:.4f}/-{err['s1_radius_rsun_err'][0]:.4f}) R_sun")
+            print(f"  Source 2 ({self.source2_params['modelname']}):")
+            print(f"    Teff    = {best['s2_teff']} (+{err['s2_teff_err'][1]:.0f}/-{err['s2_teff_err'][0]:.0f}) K")
+            print(f"    log g   = {best['s2_logg']:.2f} (+{err['s2_logg_err'][1]:.2f}/-{err['s2_logg_err'][0]:.2f})")
+            print(f"    Radius  = {best['s2_radius_rsun']:.4f} (+{err['s2_radius_rsun_err'][1]:.4f}/-{err['s2_radius_rsun_err'][0]:.4f}) R_sun")
             print(f"{'='*60}")
 
         return self.result
