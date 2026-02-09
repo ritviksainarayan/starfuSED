@@ -63,6 +63,9 @@ Here's a complete example of fitting a single star:
    # Use adaptive fitting for better precision
    result = fitter.fit_adaptive(n_refine=2)
 
+   # Estimate uncertainties via Monte Carlo perturbation
+   result = fitter.fit_mc(n_iter=100, sigma_clip=3, seed=42)
+
    # Step 4: Plot the result
    fig, axes = plot_single_sed(
        result,
@@ -189,6 +192,13 @@ The fit result dictionary contains:
    # Fit quality metrics
    print(f"Chi-squared: {result['chi2']:.2f}")
    print(f"Reduced chi-squared: {result['reduced_chi2']:.2f}")
+
+   # Monte Carlo uncertainties (after calling fit_mc())
+   if 'mc_errors' in result:
+       err = result['mc_errors']
+       print(f"Teff = {result['teff']} (+{err['teff_err'][1]:.0f}/-{err['teff_err'][0]:.0f}) K")
+       print(f"Radius = {result['radius_rsun']:.4f} "
+             f"(+{err['radius_rsun_err'][1]:.4f}/-{err['radius_rsun_err'][0]:.4f}) R_sun")
 
    # Best-fit model spectrum
    spectrum = result['spectrum']

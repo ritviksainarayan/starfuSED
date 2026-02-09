@@ -132,7 +132,23 @@ Result Dictionary
        'reduced_chi2': 1.2,       # Reduced chi-squared
        'n_data': 15,              # Number of data points
        'n_params': 1,             # Number of free parameters
-       'distance_pc': 50          # Distance used
+       'distance_pc': 50,         # Distance used
+
+       # Added by fit_mc() (if called):
+       'mc_errors': {             # Asymmetric error bounds
+           'teff_err': (250, 500),
+           'logg_err': (0.5, 0.5),
+           'radius_rsun_err': (0.02, 0.03),
+           # ... plus radius_rearth_err, radius_rjup_err
+           'n_iter': 98,          # Successful iterations
+           'n_failed': 2          # Failed iterations
+       },
+       'mc_distributions': {      # Raw parameter arrays
+           'teff': array,
+           'logg': array,
+           'radius_rsun': array,
+           # ... plus radius_rearth, radius_rjup
+       }
    }
 
 Binary System Fitting
@@ -223,6 +239,66 @@ Binary Result Dictionary
        'combined_flux': array,
        'distance_pc': 100
    }
+
+Monte Carlo Uncertainties
+-------------------------
+
+After fitting, you can estimate uncertainties by perturbing the observed fluxes
+within their measurement errors and re-fitting. The ``fit_mc()`` method draws
+perturbations from a truncated normal distribution (clipped at ±σ_clip) and
+reports asymmetric error bounds from the resulting parameter distributions.
+
+.. code-block:: python
+
+   # First, perform the fit
+   fitter = SingleSEDFitter(phot, distance_pc=50, source_params=params)
+   fitter.fit_adaptive(n_refine=2)
+
+   # Then run Monte Carlo to estimate 3σ uncertainties
+   result = fitter.fit_mc(
+       n_iter=100,      # Number of perturbation iterations
+       sigma_clip=3,    # Perturb within ±3σ
+       seed=42          # For reproducibility
+   )
+
+   # Asymmetric error bounds
+   err = result['mc_errors']
+   print(f"Teff = {result['teff']} (+{err['teff_err'][1]:.0f}/-{err['teff_err'][0]:.0f}) K")
+   print(f"log g = {result['logg']:.2f} (+{err['logg_err'][1]:.2f}/-{err['logg_err'][0]:.2f})")
+   print(f"Radius = {result['radius_rsun']:.4f} (+{err['radius_rsun_err'][1]:.4f}/-{err['radius_rsun_err'][0]:.4f}) R_sun")
+
+   # Raw distributions are available for custom analysis
+   teff_distribution = result['mc_distributions']['teff']
+
+The same method works for binary fitting:
+
+.. code-block:: python
+
+   fitter = BinarySEDFitter(phot, distance_pc=100,
+                            source1_params=source1, source2_params=source2)
+   fitter.fit_adaptive()
+   result = fitter.fit_mc(n_iter=100, seed=42)
+
+   # Binary errors are prefixed with s1_ and s2_
+   err = result['mc_errors']
+   print(f"Source 1 Teff = {result['source1']['teff']} "
+         f"(+{err['s1_teff_err'][1]:.0f}/-{err['s1_teff_err'][0]:.0f}) K")
+   print(f"Source 2 Teff = {result['source2']['teff']} "
+         f"(+{err['s2_teff_err'][1]:.0f}/-{err['s2_teff_err'][0]:.0f}) K")
+
+How It Works
+~~~~~~~~~~~~
+
+1. Each iteration draws random perturbations from N(0, 1), clips them to ±σ_clip, and scales by the measurement uncertainties.
+2. The perturbed fluxes are fit using the full original parameter grid via ``fit()``.
+3. The min/max of each parameter across all successful iterations gives the asymmetric error bounds.
+4. Since the perturbations span ±σ_clip σ, the reported bounds represent σ_clip-σ uncertainties.
+
+.. note::
+
+   Model spectra are cached from the initial fit, so only the chi-squared
+   evaluation is repeated each iteration. This makes ``fit_mc()`` much faster
+   than running ``fit()`` from scratch each time.
 
 Convenience Functions
 ---------------------
