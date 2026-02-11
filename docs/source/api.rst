@@ -49,6 +49,7 @@ The ``starfused`` package exports the following:
    plot_sed
    plot_single_sed
    plot_binary_sed
+   plot_mc_ridgeline
 
 Photometry Module
 -----------------

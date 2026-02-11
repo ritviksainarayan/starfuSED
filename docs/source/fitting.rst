@@ -270,6 +270,10 @@ reports asymmetric error bounds from the resulting parameter distributions.
    # Raw distributions are available for custom analysis
    teff_distribution = result['mc_distributions']['teff']
 
+   # Visualize with a ridgeline plot
+   from starfused import plot_mc_ridgeline
+   fig, axes = plot_mc_ridgeline(result)
+
 The same method works for binary fitting:
 
 .. code-block:: python
@@ -342,6 +346,13 @@ Setting Parameter Ranges
 - Start with wide ranges, then narrow based on initial fits
 - Use adaptive fitting to efficiently search large parameter spaces
 - Check that best-fit is not at edge of grid (suggests wrong range)
+
+Interpreting Chi-Squared
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Reduced χ² ≈ 1**: Good fit
+- **Reduced χ² >> 1**: Poor fit or underestimated uncertainties
+- **Reduced χ² << 1**: Overestimated uncertainties or overfitting
 
 API Reference
 -------------
