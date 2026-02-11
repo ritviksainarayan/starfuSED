@@ -518,3 +518,154 @@ def plot_sed(result, photometry_df, **kwargs):
         return plot_binary_sed(result, photometry_df, **kwargs)
     else:
         return plot_single_sed(result, photometry_df, **kwargs)
+
+
+def plot_mc_ridgeline(
+    result,
+    params=None,
+    figsize=None,
+    title=None,
+    show_best=False,
+    show_percentiles=False,
+    fig=None,
+    axes=None,
+):
+    """
+    Ridgeline (joy) plot of Monte Carlo parameter distributions.
+
+    Requires a result dict with 'mc_distributions' from fit_mc().
+
+    Parameters
+    ----------
+    result : dict
+        Result dictionary from fit_mc() containing 'mc_distributions'.
+    params : list of str, optional
+        Which distribution keys to plot. If None, auto-selects:
+        - Single: ['teff', 'logg', 'radius_rsun']
+        - Binary: ['s1_teff', 's1_logg', 's1_radius_rsun',
+                    's2_teff', 's2_logg', 's2_radius_rsun']
+    figsize : tuple, optional
+        Figure size. If None, auto-scales with number of panels.
+    title : str, optional
+        Overall figure title.
+    show_best : bool, optional
+        Mark the best-fit value with a vertical line (default: True).
+    show_percentiles : bool, optional
+        Mark the 16th and 84th percentiles with dashed lines (default: True).
+    fig : matplotlib.figure.Figure, optional
+        If provided with axes, plot on these.
+    axes : array-like of matplotlib.axes.Axes, optional
+        If provided, plot on these axes (must match len(params)).
+
+    Returns
+    -------
+    tuple
+        (fig, axes)
+    """
+    if 'mc_distributions' not in result:
+        raise ValueError("Result has no 'mc_distributions'. Run fit_mc() first.")
+
+    from scipy.stats import gaussian_kde
+
+    mc = result['mc_distributions']
+
+    # Auto-detect single vs binary and select default params
+    is_binary = 's1_teff' in mc
+    if params is None:
+        if is_binary:
+            params = ['s1_teff', 's1_logg', 's1_radius_rsun',
+                      's2_teff', 's2_logg', 's2_radius_rsun']
+        else:
+            params = ['teff', 'logg', 'radius_rsun']
+
+    n = len(params)
+    if figsize is None:
+        figsize = (8, 1.2 * n)
+
+    # Pretty labels for known parameters
+    _labels = {
+        'teff': r'$T_{\rm eff}$ (K)',
+        'logg': r'$\log\,g$',
+        'radius_rsun': r'$R$ ($R_\odot$)',
+        'radius_rearth': r'$R$ ($R_\oplus$)',
+        'radius_rjup': r'$R$ ($R_{\rm Jup}$)',
+        's1_teff': r'S1 $T_{\rm eff}$ (K)',
+        's1_logg': r'S1 $\log\,g$',
+        's1_radius_rsun': r'S1 $R$ ($R_\odot$)',
+        's1_radius_rearth': r'S1 $R$ ($R_\oplus$)',
+        's1_radius_rjup': r'S1 $R$ ($R_{\rm Jup}$)',
+        's2_teff': r'S2 $T_{\rm eff}$ (K)',
+        's2_logg': r'S2 $\log\,g$',
+        's2_radius_rsun': r'S2 $R$ ($R_\odot$)',
+        's2_radius_rearth': r'S2 $R$ ($R_\oplus$)',
+        's2_radius_rjup': r'S2 $R$ ($R_{\rm Jup}$)',
+    }
+
+    # Map distribution keys to best-fit values in result
+    def _get_best(key):
+        if is_binary:
+            if key.startswith('s1_'):
+                return result['source1'].get(key[3:])
+            elif key.startswith('s2_'):
+                return result['source2'].get(key[3:])
+        return result.get(key)
+
+    # Ridgeline layout: stacked subplots with overlap
+    if axes is None:
+        fig, axes = plt.subplots(n, 1, figsize=figsize)
+        if n == 1:
+            axes = [axes]
+    else:
+        if fig is None:
+            fig = axes[0].figure
+        if n == 1 and not hasattr(axes, '__len__'):
+            axes = [axes]
+
+    for i, key in enumerate(reversed(params)):
+        ax = axes[i]
+        data = mc[key]
+
+        # KDE
+        try:
+            kde = gaussian_kde(data)
+            x_grid = np.linspace(data.min(), data.max(), 500)
+            density = kde(x_grid)
+        except np.linalg.LinAlgError:
+            # Singular matrix — data is constant or near-constant, use histogram
+            counts, edges = np.histogram(data, bins=30, density=True)
+            x_grid = 0.5 * (edges[:-1] + edges[1:])
+            density = counts
+
+        # Normalize peak to 1 for consistent ridge heights
+        density = density / density.max()
+
+        ax.fill_between(x_grid, 0, density, alpha=0.6, color='steelblue')
+        ax.plot(x_grid, density, color='navy', linewidth=1)
+
+        if show_percentiles:
+            p16, p84 = np.percentile(data, [16, 84])
+            for pval in [p16, p84]:
+                ax.axvline(pval, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+
+        if show_best:
+            best_val = _get_best(key)
+            if best_val is not None:
+                ax.axvline(best_val, color='red', linewidth=1.5, alpha=0.9)
+
+        ax.set_yticks([])
+        ax.set_ylim(0, 1.3)
+        ax.patch.set_alpha(0)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+
+        # Each ridge gets its own x-axis
+        ax.set_xlabel(_labels.get(key, key), fontsize=9)
+        ax.tick_params(axis='x', labelsize=8)
+
+    fig.subplots_adjust(hspace=1.0)
+
+    if title:
+        fig.suptitle(title, fontsize=14, y=1.02)
+
+    return fig, axes
