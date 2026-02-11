@@ -172,6 +172,7 @@ class SEDFitter:
         orig_flux = self.obs_flux.copy()
         orig_df_flux = self.photometry_df['sed_flux'].values.copy()
         orig_verbose = self.verbose
+        orig_result = self.result
 
         mc_results = []
         self.verbose = False
@@ -196,10 +197,11 @@ class SEDFitter:
                 except RuntimeError:
                     pass  # Skip failed fits
         finally:
-            # Always restore original data
+            # Always restore original data and result
             self.obs_flux = orig_flux
             self.photometry_df['sed_flux'] = orig_df_flux
             self.verbose = orig_verbose
+            self.result = orig_result
 
         return mc_results
 
@@ -421,9 +423,9 @@ class SingleSEDFitter(SEDFitter):
 
         return self.result
 
-    def fit_adaptive(self, n_refine=2, refine_factor=4, coarse_factor=4, compute_errors=True):
+    def fit_adaptive(self, n_refine=2, refine_factor=4, coarse_factor=4):
         """
-        Perform adaptive SED fit with grid refinement and uncertainty estimation.
+        Perform adaptive SED fit with grid refinement.
 
         Starts with a coarse grid (step sizes multiplied by coarse_factor), then
         iteratively refines around the best-fit region until reaching the original
@@ -438,15 +440,11 @@ class SingleSEDFitter(SEDFitter):
         coarse_factor : int, optional
             Factor by which to coarsen initial grid (default: 4).
             Set to 1 to start with your original grid steps.
-        compute_errors : bool, optional
-            Whether to compute Δχ² uncertainties (default: True).
 
         Returns
         -------
         dict
-            Same as fit(), plus 'errors' dict if compute_errors=True:
-            - 'teff_err': (lower, upper) 1σ errors on Teff
-            - 'logg_err': (lower, upper) 1σ errors on log g
+            Same as fit().
         """
         # Get normalization wavelength
         norm_wave, norm_flux = self._get_norm_wavelength(
@@ -463,7 +461,7 @@ class SingleSEDFitter(SEDFitter):
         target_teff_step = self.source_params.get('teff_step', 250)
         target_logg_step = self.source_params.get('logg_step', 0.5)
 
-        all_results = []  # Store all (teff, logg, chi2) for error estimation
+        n_models_tested = 0
 
         for iteration in range(n_refine + 1):
             teff_grid, logg_grid = self._build_param_grid(current_params)
@@ -499,7 +497,7 @@ class SingleSEDFitter(SEDFitter):
                     model_flux = norm * flux_at_grid
                     chi2 = np.sum(((self.obs_flux - model_flux) / self.obs_eflux)**2)
 
-                    all_results.append((teff, logg, chi2, norm, model_result))
+                    n_models_tested += 1
 
                     if chi2 < best_chi2:
                         best_chi2 = chi2
@@ -562,65 +560,14 @@ class SingleSEDFitter(SEDFitter):
             'distance_pc': self.distance_pc,
         }
 
-        # Compute uncertainties from Δχ² = 1
-        if compute_errors:
-            results_arr = np.array([(r[0], r[1], r[2]) for r in all_results])
-            teff_vals = results_arr[:, 0]
-            logg_vals = results_arr[:, 1]
-            chi2_vals = results_arr[:, 2]
-
-            # Find models within Δχ² = 1 of best
-            within_1sigma = chi2_vals <= best_chi2 + 1.0
-
-            if within_1sigma.sum() > 1:
-                teff_1sig = teff_vals[within_1sigma]
-                logg_1sig = logg_vals[within_1sigma]
-
-                teff_err_lower = best_params['teff'] - teff_1sig.min()
-                teff_err_upper = teff_1sig.max() - best_params['teff']
-                logg_err_lower = best_params['logg'] - logg_1sig.min()
-                logg_err_upper = logg_1sig.max() - best_params['logg']
-            else:
-                # Use grid step as minimum error
-                teff_err_lower = teff_err_upper = current_params.get('teff_step', 250)
-                logg_err_lower = logg_err_upper = current_params.get('logg_step', 0.5)
-
-            self.result['errors'] = {
-                'teff_err': (teff_err_lower, teff_err_upper),
-                'logg_err': (logg_err_lower, logg_err_upper),
-            }
-
-            # Propagate to radius error (approximate)
-            # R ∝ sqrt(norm), norm ∝ 1/F_model, F_model depends on Teff
-            # Simple estimate: use range of radii within Δχ² = 1
-            radii_1sig = []
-            for r in all_results:
-                if r[2] <= best_chi2 + 1.0:
-                    r_dict = self._calculate_radius(r[3])
-                    radii_1sig.append(r_dict['radius_rsun'])
-
-            if len(radii_1sig) > 1:
-                radii_1sig = np.array(radii_1sig)
-                self.result['errors']['radius_rsun_err'] = (
-                    radii['radius_rsun'] - radii_1sig.min(),
-                    radii_1sig.max() - radii['radius_rsun']
-                )
-
         if self.verbose:
             print(f"\n{'='*60}")
             print(f"Best-fit Single Star Model (adaptive):")
-            print(f"  Tested {len(all_results)} models total")
+            print(f"  Tested {n_models_tested} models total")
             print(f"  Model: {self.source_params['modelname']}")
-            if compute_errors and 'errors' in self.result:
-                err = self.result['errors']
-                print(f"  Teff    = {self.result['teff']} (+{err['teff_err'][1]:.0f}/-{err['teff_err'][0]:.0f}) K")
-                print(f"  log g   = {self.result['logg']:.2f} (+{err['logg_err'][1]:.2f}/-{err['logg_err'][0]:.2f})")
-                if 'radius_rsun_err' in err:
-                    print(f"  Radius  = {radii['radius_rsun']:.4f} (+{err['radius_rsun_err'][1]:.4f}/-{err['radius_rsun_err'][0]:.4f}) R_sun")
-            else:
-                print(f"  Teff    = {self.result['teff']} K")
-                print(f"  log g   = {self.result['logg']}")
-                print(f"  Radius  = {radii['radius_rsun']:.4f} R_sun")
+            print(f"  Teff    = {self.result['teff']} K")
+            print(f"  log g   = {self.result['logg']}")
+            print(f"  Radius  = {radii['radius_rsun']:.4f} R_sun")
             print(f"  Reduced chi2 = {reduced_chi2:.2f}")
             print(f"{'='*60}")
 
@@ -633,7 +580,11 @@ class SingleSEDFitter(SEDFitter):
         Requires a prior call to fit() or fit_adaptive(). Perturbs the observed
         fluxes by their uncertainties (truncated normal within ±sigma_clip σ),
         re-fits each perturbed dataset using the full parameter grid, and
-        reports asymmetric error bounds from the distribution of fit results.
+        reports asymmetric 1σ error bounds from the 16th/84th percentiles
+        of the distribution of fit results.
+
+        Uses vectorized numpy operations for fast evaluation — suitable for
+        large n_iter (100k–1M+).
 
         Parameters
         ----------
@@ -648,7 +599,7 @@ class SingleSEDFitter(SEDFitter):
         -------
         dict
             The existing self.result augmented with:
-            - 'mc_errors': dict with asymmetric error bounds
+            - 'mc_errors': dict with asymmetric 1σ error bounds (16th/84th percentiles)
                 - 'teff_err': (lower, upper)
                 - 'logg_err': (lower, upper)
                 - 'radius_rsun_err': (lower, upper)
@@ -667,34 +618,115 @@ class SingleSEDFitter(SEDFitter):
         best = self.result.copy()
 
         if self.verbose:
-            print(f"\nRunning {n_iter} Monte Carlo iterations...")
+            print(f"\nRunning {n_iter} Monte Carlo iterations (vectorized)...")
 
-        mc_results = self._run_mc(n_iter, sigma_clip, seed)
+        # --- Precompute model grid ---
+        teff_grid, logg_grid = self._build_param_grid(self.source_params)
+        norm_band = self.source_params['norm_band']
+        norm_mask = self.photometry_df['sed_filter'].str.contains(
+            norm_band, case=False, na=False
+        )
+        norm_idx = np.where(norm_mask.values)[0][0]
+        norm_wave = self.photometry_df.loc[norm_mask, 'sed_wave'].values[0]
 
-        if len(mc_results) == 0:
-            raise RuntimeError("All MC iterations failed. Check parameter ranges.")
+        model_teff = []
+        model_logg = []
+        model_flux_list = []
+        model_fnorm_list = []
 
-        # Extract parameter distributions
-        teff_dist = np.array([r['teff'] for r in mc_results])
-        logg_dist = np.array([r['logg'] for r in mc_results])
-        r_rsun_dist = np.array([r['radius_rsun'] for r in mc_results])
-        r_rearth_dist = np.array([r['radius_rearth'] for r in mc_results])
-        r_rjup_dist = np.array([r['radius_rjup'] for r in mc_results])
+        for teff in teff_grid:
+            for logg in logg_grid:
+                mresult = self._get_model_flux(
+                    self.model, self._cache, teff, logg,
+                    self.source_params['metallicity'], self.obs_waves, norm_wave
+                )
+                if mresult is None or mresult['flux_at_norm'] <= 0:
+                    continue
+                model_teff.append(teff)
+                model_logg.append(logg)
+                model_flux_list.append(mresult['flux_at_grid'])
+                model_fnorm_list.append(mresult['flux_at_norm'])
 
-        # Asymmetric error bounds (range of MC distribution = 3σ)
+        n_models = len(model_teff)
+        if n_models == 0:
+            raise RuntimeError("No valid models in grid.")
+
+        model_teff = np.array(model_teff)
+        model_logg = np.array(model_logg)
+        F_norm = np.array(model_fnorm_list)              # (n_models,)
+        M = np.array(model_flux_list) / F_norm[:, None]  # (n_models, n_bands)
+
+        # Precompute weighted terms for chi2 formula:
+        # chi2_m = A - 2*obs_norm*B_m + obs_norm^2*C_m
+        # argmin over m only needs: obs_norm^2*C_m - 2*obs_norm*B_m
+        eflux_safe = np.maximum(self.obs_eflux, np.finfo(float).tiny)
+        w = 1.0 / eflux_safe**2
+        WM = w * M                        # (n_models, n_bands)
+        C = np.sum(WM * M, axis=1)        # (n_models,)
+
+        if self.verbose:
+            print(f"  Precomputed {n_models} models x {len(self.obs_flux)} bands")
+
+        # --- Generate all perturbations ---
+        rng = np.random.default_rng(seed)
+        z = rng.standard_normal((n_iter, len(self.obs_flux)))
+        np.clip(z, -sigma_clip, sigma_clip, out=z)
+        all_obs = self.obs_flux + z * self.obs_eflux  # (n_iter, n_bands)
+        del z
+        all_obs_norm = all_obs[:, norm_idx]            # (n_iter,)
+
+        # --- Vectorized grid search in chunks ---
+        chunk_size = 50000
+        best_indices = np.empty(n_iter, dtype=np.intp)
+
+        for start in range(0, n_iter, chunk_size):
+            end = min(start + chunk_size, n_iter)
+            chunk_obs = all_obs[start:end]
+            chunk_norm = all_obs_norm[start:end, None]  # (chunk, 1)
+            B = chunk_obs @ WM.T                        # (chunk, n_models)
+            chi2_rel = chunk_norm**2 * C - 2 * chunk_norm * B
+            best_indices[start:end] = np.argmin(chi2_rel, axis=1)
+
+            if self.verbose and (end % 200000 == 0 or end == n_iter):
+                print(f"  Processed {end}/{n_iter} iterations")
+
+        # --- Extract distributions ---
+        teff_dist = model_teff[best_indices]
+        logg_dist = model_logg[best_indices]
+        norm_dist = all_obs_norm / F_norm[best_indices]
+
+        valid = norm_dist > 0
+        n_success = int(valid.sum())
+        if n_success == 0:
+            raise RuntimeError("All MC iterations produced negative normalizations.")
+
+        teff_dist = teff_dist[valid]
+        logg_dist = logg_dist[valid]
+        norm_dist = norm_dist[valid]
+
+        # Vectorized radius calculation
+        from astropy import units as u
+        distance_cm = (self.distance_pc * u.pc).to(u.cm).value
+        radius_cm = np.sqrt(norm_dist) * distance_cm
+        r_rsun_dist = radius_cm / u.R_sun.to(u.cm)
+        r_rearth_dist = radius_cm / u.R_earth.to(u.cm)
+        r_rjup_dist = radius_cm / u.R_jup.to(u.cm)
+
+        # --- Compute errors ---
+        lo, hi = 16, 84
         self.result['mc_errors'] = {
-            'teff_err': (best['teff'] - teff_dist.min(),
-                         teff_dist.max() - best['teff']),
-            'logg_err': (best['logg'] - logg_dist.min(),
-                         logg_dist.max() - best['logg']),
-            'radius_rsun_err': (best['radius_rsun'] - r_rsun_dist.min(),
-                                r_rsun_dist.max() - best['radius_rsun']),
-            'radius_rearth_err': (best['radius_rearth'] - r_rearth_dist.min(),
-                                  r_rearth_dist.max() - best['radius_rearth']),
-            'radius_rjup_err': (best['radius_rjup'] - r_rjup_dist.min(),
-                                r_rjup_dist.max() - best['radius_rjup']),
-            'n_iter': len(mc_results),
-            'n_failed': n_iter - len(mc_results),
+            'teff_err': (max(0, best['teff'] - np.percentile(teff_dist, lo)),
+                         max(0, np.percentile(teff_dist, hi) - best['teff'])),
+            'logg_err': (max(0, best['logg'] - np.percentile(logg_dist, lo)),
+                         max(0, np.percentile(logg_dist, hi) - best['logg'])),
+            'radius_rsun_err': (max(0, best['radius_rsun'] - np.percentile(r_rsun_dist, lo)),
+                                max(0, np.percentile(r_rsun_dist, hi) - best['radius_rsun'])),
+            'radius_rearth_err': (max(0, best['radius_rearth'] - np.percentile(r_rearth_dist, lo)),
+                                  max(0, np.percentile(r_rearth_dist, hi) - best['radius_rearth'])),
+            'radius_rjup_err': (max(0, best['radius_rjup'] - np.percentile(r_rjup_dist, lo)),
+                                max(0, np.percentile(r_rjup_dist, hi) - best['radius_rjup'])),
+            'n_iter': n_success,
+            'n_failed': n_iter - n_success,
         }
 
         self.result['mc_distributions'] = {
@@ -708,7 +740,7 @@ class SingleSEDFitter(SEDFitter):
         if self.verbose:
             err = self.result['mc_errors']
             print(f"\n{'='*60}")
-            print(f"Monte Carlo Uncertainties ({err['n_iter']}/{n_iter} iterations succeeded):")
+            print(f"Monte Carlo Uncertainties ({n_success}/{n_iter} iterations succeeded):")
             print(f"  Teff    = {best['teff']} (+{err['teff_err'][1]:.0f}/-{err['teff_err'][0]:.0f}) K")
             print(f"  log g   = {best['logg']:.2f} (+{err['logg_err'][1]:.2f}/-{err['logg_err'][0]:.2f})")
             print(f"  Radius  = {best['radius_rsun']:.4f} (+{err['radius_rsun_err'][1]:.4f}/-{err['radius_rsun_err'][0]:.4f}) R_sun")
@@ -991,9 +1023,9 @@ class BinarySEDFitter(SEDFitter):
 
         return self.result
 
-    def fit_adaptive(self, n_refine=2, refine_factor=4, coarse_factor=4, compute_errors=True):
+    def fit_adaptive(self, n_refine=2, refine_factor=4, coarse_factor=4):
         """
-        Perform adaptive binary SED fit with grid refinement and uncertainty estimation.
+        Perform adaptive binary SED fit with grid refinement.
 
         Starts with a coarse grid (step sizes multiplied by coarse_factor), then
         iteratively refines around the best-fit region until reaching the original
@@ -1008,14 +1040,11 @@ class BinarySEDFitter(SEDFitter):
         coarse_factor : int, optional
             Factor by which to coarsen initial grid (default: 4).
             Set to 1 to start with your original grid steps.
-        compute_errors : bool, optional
-            Whether to compute Δχ² uncertainties (default: True).
 
         Returns
         -------
         dict
-            Same as fit(), plus 'errors' dict if compute_errors=True containing
-            error estimates for each source's Teff, logg, and radius.
+            Same as fit().
         """
         # Get normalization wavelength for source 1 (required)
         norm1_wave, norm1_flux = self._get_norm_wavelength(
@@ -1041,7 +1070,7 @@ class BinarySEDFitter(SEDFitter):
             current_s2_params['teff_step'] = self.source2_params.get('teff_step', 100) * coarse_factor
             current_s2_params['logg_step'] = self.source2_params.get('logg_step', 0.5) * coarse_factor
 
-        all_results = []  # Store all results for error estimation
+        n_models_tested = 0
 
         # Target step sizes (original or finer)
         target_s1_teff_step = self.source1_params.get('teff_step', 250)
@@ -1109,18 +1138,18 @@ class BinarySEDFitter(SEDFitter):
                             combined_flux = s1_model_flux + norm2 * s2_flux_grid
                             chi2 = np.sum(((self.obs_flux - combined_flux) / self.obs_eflux)**2)
 
-                            all_results.append({
-                                's1_teff': s1_teff, 's1_logg': s1_logg, 's1_norm': norm1,
-                                's2_teff': s2_teff, 's2_logg': s2_logg, 's2_norm': norm2,
-                                'chi2': chi2,
-                                's1_spectrum': s1_result['spectrum'],
-                                's2_spectrum': s2_result['spectrum'],
-                                'combined_flux': combined_flux,
-                            })
+                            n_models_tested += 1
 
                             if chi2 < best_chi2:
                                 best_chi2 = chi2
-                                best_params = all_results[-1]
+                                best_params = {
+                                    's1_teff': s1_teff, 's1_logg': s1_logg, 's1_norm': norm1,
+                                    's2_teff': s2_teff, 's2_logg': s2_logg, 's2_norm': norm2,
+                                    'chi2': chi2,
+                                    's1_spectrum': s1_result['spectrum'],
+                                    's2_spectrum': s2_result['spectrum'],
+                                    'combined_flux': combined_flux,
+                                }
 
             if best_params is None:
                 raise RuntimeError("No valid fits found.")
@@ -1204,70 +1233,18 @@ class BinarySEDFitter(SEDFitter):
             'distance_pc': self.distance_pc,
         }
 
-        # Compute uncertainties from Δχ² = 1
-        if compute_errors:
-            chi2_vals = np.array([r['chi2'] for r in all_results])
-            within_1sigma = chi2_vals <= best_chi2 + 1.0
-
-            if within_1sigma.sum() > 1:
-                s1_teff_1sig = np.array([r['s1_teff'] for r in all_results])[within_1sigma]
-                s1_logg_1sig = np.array([r['s1_logg'] for r in all_results])[within_1sigma]
-                s2_teff_1sig = np.array([r['s2_teff'] for r in all_results])[within_1sigma]
-                s2_logg_1sig = np.array([r['s2_logg'] for r in all_results])[within_1sigma]
-                s1_norm_1sig = np.array([r['s1_norm'] for r in all_results])[within_1sigma]
-                s2_norm_1sig = np.array([r['s2_norm'] for r in all_results])[within_1sigma]
-
-                self.result['errors'] = {
-                    's1_teff_err': (best_params['s1_teff'] - s1_teff_1sig.min(),
-                                    s1_teff_1sig.max() - best_params['s1_teff']),
-                    's1_logg_err': (best_params['s1_logg'] - s1_logg_1sig.min(),
-                                    s1_logg_1sig.max() - best_params['s1_logg']),
-                    's2_teff_err': (best_params['s2_teff'] - s2_teff_1sig.min(),
-                                    s2_teff_1sig.max() - best_params['s2_teff']),
-                    's2_logg_err': (best_params['s2_logg'] - s2_logg_1sig.min(),
-                                    s2_logg_1sig.max() - best_params['s2_logg']),
-                }
-
-                # Radius errors
-                s1_radii_1sig = [self._calculate_radius(n)['radius_rsun'] for n in s1_norm_1sig]
-                s2_radii_1sig = [self._calculate_radius(n)['radius_rsun'] for n in s2_norm_1sig]
-
-                self.result['errors']['s1_radius_rsun_err'] = (
-                    s1_radii['radius_rsun'] - min(s1_radii_1sig),
-                    max(s1_radii_1sig) - s1_radii['radius_rsun']
-                )
-                self.result['errors']['s2_radius_rsun_err'] = (
-                    s2_radii['radius_rsun'] - min(s2_radii_1sig),
-                    max(s2_radii_1sig) - s2_radii['radius_rsun']
-                )
-
         if self.verbose:
             print(f"\n{'='*60}")
             print(f"Best-fit Binary Model (adaptive):")
-            print(f"  Tested {len(all_results)} model combinations total")
-
-            if compute_errors and 'errors' in self.result:
-                err = self.result['errors']
-                print(f"  Source 1 ({self.source1_params['modelname']}):")
-                print(f"    Teff    = {self.result['source1']['teff']} (+{err['s1_teff_err'][1]:.0f}/-{err['s1_teff_err'][0]:.0f}) K")
-                print(f"    log g   = {self.result['source1']['logg']:.2f} (+{err['s1_logg_err'][1]:.2f}/-{err['s1_logg_err'][0]:.2f})")
-                if 's1_radius_rsun_err' in err:
-                    print(f"    Radius  = {s1_radii['radius_rsun']:.4f} (+{err['s1_radius_rsun_err'][1]:.4f}/-{err['s1_radius_rsun_err'][0]:.4f}) R_sun")
-                print(f"  Source 2 ({self.source2_params['modelname']}):")
-                print(f"    Teff    = {self.result['source2']['teff']} (+{err['s2_teff_err'][1]:.0f}/-{err['s2_teff_err'][0]:.0f}) K")
-                print(f"    log g   = {self.result['source2']['logg']:.2f} (+{err['s2_logg_err'][1]:.2f}/-{err['s2_logg_err'][0]:.2f})")
-                if 's2_radius_rsun_err' in err:
-                    print(f"    Radius  = {s2_radii['radius_rsun']:.4f} (+{err['s2_radius_rsun_err'][1]:.4f}/-{err['s2_radius_rsun_err'][0]:.4f}) R_sun")
-            else:
-                print(f"  Source 1 ({self.source1_params['modelname']}):")
-                print(f"    Teff    = {self.result['source1']['teff']} K")
-                print(f"    log g   = {self.result['source1']['logg']}")
-                print(f"    Radius  = {s1_radii['radius_rsun']:.4f} R_sun")
-                print(f"  Source 2 ({self.source2_params['modelname']}):")
-                print(f"    Teff    = {self.result['source2']['teff']} K")
-                print(f"    log g   = {self.result['source2']['logg']}")
-                print(f"    Radius  = {s2_radii['radius_rsun']:.4f} R_sun")
-
+            print(f"  Tested {n_models_tested} model combinations total")
+            print(f"  Source 1 ({self.source1_params['modelname']}):")
+            print(f"    Teff    = {self.result['source1']['teff']} K")
+            print(f"    log g   = {self.result['source1']['logg']}")
+            print(f"    Radius  = {s1_radii['radius_rsun']:.4f} R_sun")
+            print(f"  Source 2 ({self.source2_params['modelname']}):")
+            print(f"    Teff    = {self.result['source2']['teff']} K")
+            print(f"    log g   = {self.result['source2']['logg']}")
+            print(f"    Radius  = {s2_radii['radius_rsun']:.4f} R_sun")
             print(f"  Combined Reduced chi2 = {reduced_chi2:.2f}")
             print(f"{'='*60}")
 
@@ -1280,7 +1257,11 @@ class BinarySEDFitter(SEDFitter):
         Requires a prior call to fit() or fit_adaptive(). Perturbs the observed
         fluxes by their uncertainties (truncated normal within ±sigma_clip σ),
         re-fits each perturbed dataset using the full parameter grid, and
-        reports asymmetric error bounds from the distribution of fit results.
+        reports asymmetric 1σ error bounds from the 16th/84th percentiles
+        of the distribution of fit results.
+
+        Uses vectorized numpy operations for fast evaluation — suitable for
+        large n_iter (100k–1M+).
 
         Parameters
         ----------
@@ -1295,7 +1276,7 @@ class BinarySEDFitter(SEDFitter):
         -------
         dict
             The existing self.result augmented with:
-            - 'mc_errors': dict with asymmetric error bounds for each source
+            - 'mc_errors': dict with asymmetric 1σ error bounds (16th/84th percentiles)
                 - 's1_teff_err', 's1_logg_err', 's1_radius_rsun_err', etc.
                 - 's2_teff_err', 's2_logg_err', 's2_radius_rsun_err', etc.
                 - 'n_iter': number of successful iterations
@@ -1321,29 +1302,216 @@ class BinarySEDFitter(SEDFitter):
         }
 
         if self.verbose:
-            print(f"\nRunning {n_iter} Monte Carlo iterations...")
+            print(f"\nRunning {n_iter} Monte Carlo iterations (vectorized)...")
 
-        mc_results = self._run_mc(n_iter, sigma_clip, seed)
+        # --- Precompute source 1 model grid ---
+        s1_teff_grid, s1_logg_grid = self._build_param_grid(self.source1_params)
+        norm1_band = self.source1_params['norm_band']
+        norm1_mask = self.photometry_df['sed_filter'].str.contains(
+            norm1_band, case=False, na=False
+        )
+        norm1_idx = np.where(norm1_mask.values)[0][0]
+        norm1_wave = self.photometry_df.loc[norm1_mask, 'sed_wave'].values[0]
 
-        if len(mc_results) == 0:
+        s1_teff_arr = []
+        s1_logg_arr = []
+        s1_flux_list = []
+        s1_fnorm_list = []
+        s1_at_norm2_list = []  # unscaled s1 flux at norm2 wavelength (anchor case)
+
+        # Source 2 normalization setup
+        s2_norm_band = self.source2_params.get('norm_band')
+        s2_use_anchor = s2_norm_band is not None
+        if s2_use_anchor:
+            norm2_mask = self.photometry_df['sed_filter'].str.contains(
+                s2_norm_band, case=False, na=False
+            )
+            norm2_idx = np.where(norm2_mask.values)[0][0]
+            norm2_wave = self.photometry_df.loc[norm2_mask, 'sed_wave'].values[0]
+        else:
+            norm2_wave = norm1_wave  # placeholder
+
+        for teff in s1_teff_grid:
+            for logg in s1_logg_grid:
+                mresult = self._get_model_flux(
+                    self.model1, self._cache1, teff, logg,
+                    self.source1_params['metallicity'], self.obs_waves, norm1_wave
+                )
+                if mresult is None or mresult['flux_at_norm'] <= 0:
+                    continue
+                s1_teff_arr.append(teff)
+                s1_logg_arr.append(logg)
+                s1_flux_list.append(mresult['flux_at_grid'])
+                s1_fnorm_list.append(mresult['flux_at_norm'])
+                if s2_use_anchor:
+                    spec = mresult['spectrum']
+                    s1_at_norm2_list.append(np.interp(
+                        norm2_wave, spec['wavelength'].values, spec['flux'].values
+                    ))
+
+        n_s1 = len(s1_teff_arr)
+        s1_teff_arr = np.array(s1_teff_arr)
+        s1_logg_arr = np.array(s1_logg_arr)
+        S1 = np.array(s1_flux_list)         # (n_s1, n_bands)
+        S1_fnorm = np.array(s1_fnorm_list)   # (n_s1,)
+        if s2_use_anchor:
+            s1_at_norm2 = np.array(s1_at_norm2_list)  # (n_s1,)
+
+        # --- Precompute source 2 model grid ---
+        s2_teff_grid, s2_logg_grid = self._build_param_grid(self.source2_params)
+
+        s2_teff_arr = []
+        s2_logg_arr = []
+        s2_flux_list = []
+        s2_fnorm_list = []
+
+        for teff in s2_teff_grid:
+            for logg in s2_logg_grid:
+                mresult = self._get_model_flux(
+                    self.model2, self._cache2, teff, logg,
+                    self.source2_params['metallicity'], self.obs_waves, norm2_wave
+                )
+                if mresult is None:
+                    continue
+                if s2_use_anchor and mresult['flux_at_norm'] <= 0:
+                    continue
+                s2_teff_arr.append(teff)
+                s2_logg_arr.append(logg)
+                s2_flux_list.append(mresult['flux_at_grid'])
+                if s2_use_anchor:
+                    s2_fnorm_list.append(mresult['flux_at_norm'])
+
+        n_s2 = len(s2_teff_arr)
+        s2_teff_arr = np.array(s2_teff_arr)
+        s2_logg_arr = np.array(s2_logg_arr)
+        S2 = np.array(s2_flux_list)  # (n_s2, n_bands)
+
+        if n_s1 == 0 or n_s2 == 0:
+            raise RuntimeError("No valid models in grid.")
+
+        # Precompute weighted terms
+        eflux_safe = np.maximum(self.obs_eflux, np.finfo(float).tiny)
+        w = 1.0 / eflux_safe**2  # (n_bands,)
+
+        if s2_use_anchor:
+            S2_fnorm = np.array(s2_fnorm_list)            # (n_s2,)
+            M2 = S2 / S2_fnorm[:, None]                   # (n_s2, n_bands)
+            WM2 = w * M2                                  # (n_s2, n_bands)
+            C2 = np.sum(WM2 * M2, axis=1)                 # (n_s2,)
+        else:
+            WS2 = w * S2                                   # (n_s2, n_bands)
+            C2 = np.sum(WS2 * S2, axis=1)                 # (n_s2,)
+
+        if self.verbose:
+            print(f"  Precomputed {n_s1} x {n_s2} = {n_s1 * n_s2} model pairs")
+
+        # --- Generate all perturbations ---
+        rng = np.random.default_rng(seed)
+        z = rng.standard_normal((n_iter, len(self.obs_flux)))
+        np.clip(z, -sigma_clip, sigma_clip, out=z)
+        all_obs = self.obs_flux + z * self.obs_eflux  # (n_iter, n_bands)
+        del z
+        all_norm1_flux = all_obs[:, norm1_idx]         # (n_iter,)
+        if s2_use_anchor:
+            all_norm2_flux = all_obs[:, norm2_idx]     # (n_iter,)
+
+        # --- Vectorized grid search ---
+        # For each s1 model, vectorize over all iterations x s2 models
+        chunk_size = 50000
+        global_best_chi2 = np.full(n_iter, np.inf)
+        global_best_s1 = np.zeros(n_iter, dtype=np.intp)
+        global_best_s2 = np.zeros(n_iter, dtype=np.intp)
+        global_best_norm1 = np.zeros(n_iter)
+        global_best_norm2 = np.zeros(n_iter)
+
+        for m1 in range(n_s1):
+            norm1_all = all_norm1_flux / S1_fnorm[m1]  # (n_iter,)
+
+            for start in range(0, n_iter, chunk_size):
+                end = min(start + chunk_size, n_iter)
+                chunk_len = end - start
+                chunk_norm1 = norm1_all[start:end]              # (chunk,)
+                s1_flux = chunk_norm1[:, None] * S1[m1]         # (chunk, n_bands)
+                residual = all_obs[start:end] - s1_flux         # (chunk, n_bands)
+                R = np.sum(w * residual**2, axis=1)             # (chunk,)
+
+                if s2_use_anchor:
+                    chunk_norm2_flux = all_norm2_flux[start:end]
+                    a = chunk_norm2_flux - chunk_norm1 * s1_at_norm2[m1]  # (chunk,)
+                    B2 = residual @ WM2.T                       # (chunk, n_s2)
+                    chi2 = R[:, None] - 2 * a[:, None] * B2 + a[:, None]**2 * C2
+                    norm2 = a[:, None] / S2_fnorm                # (chunk, n_s2)
+                else:
+                    B2 = residual @ WS2.T                        # (chunk, n_s2)
+                    norm2 = B2 / C2                              # (chunk, n_s2)
+                    chi2 = R[:, None] - B2**2 / C2               # (chunk, n_s2)
+
+                # Mask invalid (negative norms)
+                chi2[(norm2 <= 0) | (chunk_norm1[:, None] <= 0)] = np.inf
+
+                # Find best s2 per iteration in this chunk
+                best_s2 = np.argmin(chi2, axis=1)                # (chunk,)
+                best_chi2 = chi2[np.arange(chunk_len), best_s2]  # (chunk,)
+
+                # Update global best where improved
+                improved = best_chi2 < global_best_chi2[start:end]
+                if improved.any():
+                    idx = np.where(improved)[0]
+                    abs_idx = start + idx
+                    global_best_chi2[abs_idx] = best_chi2[idx]
+                    global_best_s1[abs_idx] = m1
+                    global_best_s2[abs_idx] = best_s2[idx]
+                    global_best_norm1[abs_idx] = chunk_norm1[idx]
+                    global_best_norm2[abs_idx] = norm2[idx, best_s2[idx]]
+
+            if self.verbose and ((m1 + 1) % max(1, n_s1 // 5) == 0 or m1 == n_s1 - 1):
+                print(f"  Source 1 model {m1 + 1}/{n_s1}")
+
+        # --- Extract distributions ---
+        valid = np.isfinite(global_best_chi2)
+        n_success = int(valid.sum())
+        if n_success == 0:
             raise RuntimeError("All MC iterations failed. Check parameter ranges.")
 
-        # Extract parameter distributions
-        dists = {}
-        for prefix, src_key in [('s1', 'source1'), ('s2', 'source2')]:
-            dists[f'{prefix}_teff'] = np.array([r[src_key]['teff'] for r in mc_results])
-            dists[f'{prefix}_logg'] = np.array([r[src_key]['logg'] for r in mc_results])
-            dists[f'{prefix}_radius_rsun'] = np.array([r[src_key]['radius_rsun'] for r in mc_results])
-            dists[f'{prefix}_radius_rearth'] = np.array([r[src_key]['radius_rearth'] for r in mc_results])
-            dists[f'{prefix}_radius_rjup'] = np.array([r[src_key]['radius_rjup'] for r in mc_results])
+        s1_teff_dist = s1_teff_arr[global_best_s1[valid]]
+        s1_logg_dist = s1_logg_arr[global_best_s1[valid]]
+        s2_teff_dist = s2_teff_arr[global_best_s2[valid]]
+        s2_logg_dist = s2_logg_arr[global_best_s2[valid]]
+        norm1_dist = global_best_norm1[valid]
+        norm2_dist = global_best_norm2[valid]
 
-        # Asymmetric error bounds
+        # Vectorized radius calculation
+        from astropy import units as u
+        distance_cm = (self.distance_pc * u.pc).to(u.cm).value
+        rsun_cm = u.R_sun.to(u.cm)
+        rearth_cm = u.R_earth.to(u.cm)
+        rjup_cm = u.R_jup.to(u.cm)
+
+        s1_radius_cm = np.sqrt(norm1_dist) * distance_cm
+        s2_radius_cm = np.sqrt(norm2_dist) * distance_cm
+
+        dists = {
+            's1_teff': s1_teff_dist,
+            's1_logg': s1_logg_dist,
+            's1_radius_rsun': s1_radius_cm / rsun_cm,
+            's1_radius_rearth': s1_radius_cm / rearth_cm,
+            's1_radius_rjup': s1_radius_cm / rjup_cm,
+            's2_teff': s2_teff_dist,
+            's2_logg': s2_logg_dist,
+            's2_radius_rsun': s2_radius_cm / rsun_cm,
+            's2_radius_rearth': s2_radius_cm / rearth_cm,
+            's2_radius_rjup': s2_radius_cm / rjup_cm,
+        }
+
+        # --- Compute errors ---
+        lo, hi = 16, 84
         mc_errors = {
-            'n_iter': len(mc_results),
-            'n_failed': n_iter - len(mc_results),
+            'n_iter': n_success,
+            'n_failed': n_iter - n_success,
         }
         for key, dist in dists.items():
-            mc_errors[f'{key}_err'] = (best[key] - dist.min(), dist.max() - best[key])
+            mc_errors[f'{key}_err'] = (max(0, best[key] - np.percentile(dist, lo)),
+                                       max(0, np.percentile(dist, hi) - best[key]))
 
         self.result['mc_errors'] = mc_errors
         self.result['mc_distributions'] = dists
@@ -1351,7 +1519,7 @@ class BinarySEDFitter(SEDFitter):
         if self.verbose:
             err = mc_errors
             print(f"\n{'='*60}")
-            print(f"Monte Carlo Uncertainties ({err['n_iter']}/{n_iter} iterations succeeded):")
+            print(f"Monte Carlo Uncertainties ({n_success}/{n_iter} iterations succeeded):")
             print(f"  Source 1 ({self.source1_params['modelname']}):")
             print(f"    Teff    = {best['s1_teff']} (+{err['s1_teff_err'][1]:.0f}/-{err['s1_teff_err'][0]:.0f}) K")
             print(f"    log g   = {best['s1_logg']:.2f} (+{err['s1_logg_err'][1]:.2f}/-{err['s1_logg_err'][0]:.2f})")
