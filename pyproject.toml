@@ -9,7 +9,7 @@ description = "SED fitting for single and binary stellar systems"
 readme = "README.rst"
 license = {text = "MIT"}
 authors = [
-    {name = "Ritvik Sai Narayan", email = ""}
+    {name = "Ritvik Sai Narayan", email = "rnarayan4@wisc.edu"}
 ]
 requires-python = ">=3.8"
 classifiers = [
