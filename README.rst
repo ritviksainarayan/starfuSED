@@ -25,25 +25,27 @@ Key Features
   - Koester DA white dwarf models.
   - BT-Settl models for cool stars and brown dwarfs.
 
-- **Automatic Photometry Retrieval**: Query VizieR SED service by object name or coordinates. 
-- **Dust Extinction Correction**: Multiple extinction curves and dust maps supported. 
-- **Single and Binary SED Fitting**: Chi-squared minimization with adaptive grid refinement. 
-- **Publication-Ready Plotting**: Customizable SED plots with residual panels. 
+- **Automatic Photometry Retrieval**: Query VizieR SED service by object name or coordinates.
+- **Dust Extinction Correction**: Multiple extinction curves and dust maps supported.
+- **Single and Binary SED Fitting**: Chi-squared minimization with adaptive grid refinement.
+- **Publication-Ready Plotting**: Customizable SED plots with residual panels.
 
 Installation
 ------------
+
+Install directly from GitHub:
+
+.. code-block:: bash
+
+   pip install git+https://github.com/ritviksainarayan/starfuSED.git
+
+Or clone and install in editable mode for development:
 
 .. code-block:: bash
 
    git clone https://github.com/ritviksainarayan/starfuSED.git
    cd starfuSED
    pip install -e .
-
-Or install dependencies only:
-
-.. code-block:: bash
-
-   pip install numpy pandas scipy matplotlib requests astropy astroquery
 
 Quick Start
 -----------
