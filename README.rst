@@ -96,10 +96,6 @@ License
 
 MIT License
 
-Author
-------
-
-Ritvik Sai Narayan
 
 Acknowledgments
 ---------------
