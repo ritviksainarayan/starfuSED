@@ -7,12 +7,9 @@
 starfuSED
 =========
 
-**Spectral Energy Distribution fitting for stars**
+**Spectral Energy Distribution fitting for stars** — version 1.0
 
 *starfuSED* is a Python package for SED (Spectral Energy Distribution) fitting of single and binary stellar systems. It provides a complete workflow from photometry retrieval to model fitting and visualization, all with in-memory processing.
-
-.. image:: https://img.shields.io/badge/status-in%20development-yellow
-   :alt: Development Status
 
 Key Features
 ------------
@@ -20,7 +17,7 @@ Key Features
 - **In-Memory Processing**: No need to download large dust maps or spectral model grids locally.
 - **Multiple Stellar Model Grids**: Unified interface to four atmospheric model grids:
 
-  - Castelli-Kurucz 2004 modes.
+  - Castelli-Kurucz 2004 models.
   - PHOENIX stellar atmosphere models.
   - Koester DA white dwarf models.
   - BT-Settl models for cool stars and brown dwarfs.
@@ -39,7 +36,7 @@ Install directly from GitHub:
 
    pip install git+https://github.com/ritviksainarayan/starfuSED.git
 
-Or clone and install in editable mode for development:
+Or clone the repository and install it in editable mode:
 
 .. code-block:: bash
 

@@ -22,7 +22,7 @@ Available Model Grids
      - -2.5 to +0.5
      - Main sequence stars
    * - ``phoenix``
-     - Full range
+     - 2000-70000 K
      - 0.0-5.0
      - -4.0 to +0.5
      - Cool stars, M dwarfs
@@ -32,7 +32,7 @@ Available Model Grids
      - N/A
      - DA white dwarfs
    * - ``bt-settl``
-     - 400-70000 K
+     - 400-7000 K
      - -0.5 to 6.0
      - -4.0 to +0.5
      - Brown dwarfs, L/T/Y dwarfs
@@ -62,7 +62,7 @@ The ``StellarModel`` class provides a unified interface to all model grids:
 Finding the Closest Model
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Model grids have discrete parameter values. Use ``find_model()`` to see what parameters will actually be used:
+Model grids have discrete parameter values, and *starfuSED* always uses the nearest available model rather than interpolating between models. Use ``find_model()`` to see which model will be used:
 
 .. code-block:: python
 
@@ -71,7 +71,10 @@ Model grids have discrete parameter values. Use ``find_model()`` to see what par
    # Find closest available model
    params = model.find_model(teff=5800, logg=4.3, metallicity=0.1)
    print(params)
-   # Output: {'teff': 5750, 'logg': 4.5, 'metallicity': 0.0, ...}
+   # Output: {'teff': 5750, 'logg': 4.3, 'metallicity': 0.0,
+   #          'dirname': 'ckp00', 'filename': 'ckp00_5750.fits'}
+
+For ``ck04`` and ``phoenix``, each FITS file holds all log g values for one Teff, so ``find_model()`` returns the requested log g and the nearest column (here log g = 4.5) is selected when the spectrum is loaded.
 
 Castelli-Kurucz 2004 (CK04)
 ---------------------------
@@ -82,7 +85,7 @@ The CK04 grid uses ATLAS9 model atmospheres and is the most commonly used for ma
 
 **Parameter Grid**:
 
-- **Teff**: 3500-50000 K in 250 K steps
+- **Teff**: 3500-13000 K in 250 K steps; 13000-50000 K in 1000 K steps
 - **log g**: 0.0-5.0 in 0.5 dex steps
 - **[M/H]**: -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, +0.2, +0.5
 
@@ -108,7 +111,7 @@ PHOENIX models are computed with a more detailed treatment of molecular opacitie
 
 **Parameter Grid**:
 
-- **Teff**: Full range with ~100 K resolution
+- **Teff**: 2000-7000 K in 100 K steps; 7000-12000 K in 200 K steps; 12000-20000 K in 500 K steps; 20000-70000 K in 1000 K steps
 - **log g**: 0.0-5.0 in 0.5 dex steps
 - **[M/H]**: -4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, 0.0, +0.3, +0.5
 
@@ -159,9 +162,9 @@ BT-Settl models include cloud formation and dust settling physics, making them i
 
 **Parameter Grid**:
 
-- **Teff**: 400-70000 K (100 K steps for T < 7000 K)
+- **Teff**: 400-7000 K in 100 K steps
 - **log g**: -0.5 to 6.0 in 0.5 dex steps
-- **[M/H]**: -4.0 to +0.5
+- **[M/H]**: -4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, +0.5
 
 .. code-block:: python
 

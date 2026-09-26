@@ -1,26 +1,31 @@
-==========
+===========
 SED Fitting
-==========
+===========
 
 *starfuSED* provides two SED fitting classes: ``SingleSEDFitter`` for single stars and ``BinarySEDFitter`` for binary systems.
 
 How SED Fitting Works
 ---------------------
 
-The fitting process uses chi-squared minimization:
+The fitting process is a chi-squared grid search over effective temperature and surface gravity at a fixed metallicity:
 
 1. **Grid Search**: For each combination of Teff and log g in the parameter grid:
 
-   a. Load the model spectrum
-   b. Interpolate to observation wavelengths
-   c. Compute normalization factor from the specified band
-   d. Calculate chi-squared: χ² = Σ[(F_obs - F_model)² / σ²]
+   a. Load the nearest model spectrum from the native atmosphere grid (models are never interpolated; see :ref:`grid-precision`).
+   b. Sample the model at the effective wavelength of each observed band.
+   c. Scale the model so that it matches the observed flux in the normalization band.
+   d. Calculate chi-squared: χ² = Σ[(F_obs - F_model)² / σ²].
 
-2. **Best Fit**: Select parameters with minimum chi-squared
+2. **Best Fit**: Select the parameters with the minimum chi-squared.
 
 3. **Radius Calculation**: From the normalization factor (R/d)²:
 
    R = sqrt(norm) × d
+
+.. note::
+
+   Model fluxes are evaluated at each band's effective wavelength rather than integrated over the filter transmission curve.
+   This approximation is less accurate for broad filters and for cool stars with strong molecular features.
 
 Single Star Fitting
 -------------------
@@ -56,7 +61,7 @@ Basic Usage
 Parameter Dictionary
 ~~~~~~~~~~~~~~~~~~~~
 
-The ``source_params`` dictionary requires:
+The ``source_params`` dictionary accepts the following keys:
 
 .. list-table::
    :header-rows: 1
@@ -67,36 +72,41 @@ The ``source_params`` dictionary requires:
      - Description
    * - ``modelname``
      - Yes
-     - Model grid: ``'ck04'``, ``'phoenix'``, ``'koester'``, ``'bt-settl'``
+     - Model grid: ``'ck04'``, ``'phoenix'``, ``'koester'``, ``'bt-settl'``.
    * - ``teff_min``
      - Yes
-     - Minimum temperature to search (K)
+     - Minimum temperature to search (K).
    * - ``teff_max``
      - Yes
-     - Maximum temperature to search (K)
+     - Maximum temperature to search (K).
    * - ``teff_step``
      - No
-     - Temperature step size (default: 250 K)
+     - Temperature step size (default: 250 K).
    * - ``logg_min``
      - Yes
-     - Minimum log g to search
+     - Minimum log g to search.
    * - ``logg_max``
      - Yes
-     - Maximum log g to search
+     - Maximum log g to search.
    * - ``logg_step``
      - No
-     - log g step size (default: 0.5)
+     - log g step size (default: 0.5).
    * - ``metallicity``
      - Yes
-     - Fixed metallicity [M/H] (use ``None`` for Koester)
+     - Fixed metallicity [M/H] (use ``None`` for Koester).
    * - ``norm_band``
      - Yes
-     - Filter name for normalization (e.g., ``'SDSS:r'``, ``'2MASS:H'``)
+     - Filter name for normalization (e.g., ``'SDSS:r'``, ``'2MASS:H'``). Matched as a case-insensitive substring of ``sed_filter``; the first match is used.
+
+.. tip::
+
+   Choose ``teff_min``, ``logg_min`` and the step sizes so that the search lands on the native nodes of the model grid (see :ref:`grid-precision`).
+   Off-node values are replaced by the nearest available model, but the result reports the value that was requested.
 
 Adaptive Fitting
 ~~~~~~~~~~~~~~~~
 
-For better precision, use adaptive grid refinement:
+To search a wide parameter range more quickly, use adaptive grid refinement:
 
 .. code-block:: python
 
@@ -108,10 +118,12 @@ For better precision, use adaptive grid refinement:
 
 The adaptive method:
 
-1. Starts with a coarse grid (steps × coarse_factor)
-2. Finds approximate best-fit
-3. Refines grid around best-fit (steps ÷ refine_factor)
-4. Repeats n_refine times
+1. Starts with a coarse grid (steps × ``coarse_factor``).
+2. Finds the approximate best fit.
+3. Narrows the grid around the best fit and reduces the steps by ``refine_factor``, but never below the ``teff_step`` and ``logg_step`` you specified.
+4. Repeats ``n_refine`` times.
+
+Adaptive fitting reduces the number of models evaluated; it does not resolve parameters more finely than your step sizes or the native model grid.
 
 Result Dictionary
 ~~~~~~~~~~~~~~~~~
@@ -133,22 +145,6 @@ Result Dictionary
        'n_data': 15,              # Number of data points
        'n_params': 1,             # Number of free parameters
        'distance_pc': 50,         # Distance used
-
-       # Added by fit_mc() (if called):
-       'mc_errors': {             # Asymmetric error bounds
-           'teff_err': (250, 500),
-           'logg_err': (0.5, 0.5),
-           'radius_rsun_err': (0.02, 0.03),
-           # ... plus radius_rearth_err, radius_rjup_err
-           'n_iter': 98,          # Successful iterations
-           'n_failed': 2          # Failed iterations
-       },
-       'mc_distributions': {      # Raw parameter arrays
-           'teff': array,
-           'logg': array,
-           'radius_rsun': array,
-           # ... plus radius_rearth, radius_rjup
-       }
    }
 
 Binary System Fitting
@@ -201,10 +197,10 @@ For systems with two stellar components (e.g., WD + M dwarf):
 Binary Normalization Strategy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The binary fitter anchors each component to a different band:
+Both components share the supplied distance. The binary fitter scales them as follows:
 
-- **Source 1**: Normalized to its ``norm_band`` (typically UV for hot component)
-- **Source 2**: Either normalized to its ``norm_band`` or fit via least-squares to the residual after subtracting source 1
+- **Source 1**: Anchored to its ``norm_band`` (typically a UV band for the hot component).
+- **Source 2**: In ``fit()``, anchored so that the combined model matches the observed flux in its ``norm_band``, or, if ``'norm_band': None``, scaled by weighted least squares to the residual flux after subtracting source 1. ``fit_adaptive()`` always uses the least-squares scaling for source 2.
 
 This approach works best when the two components dominate at different wavelengths.
 
@@ -236,78 +232,49 @@ Binary Result Dictionary
        },
        'chi2': 12.5,
        'reduced_chi2': 1.1,
+       'n_data': 15,
+       'n_params': 4,
        'combined_flux': array,
        'distance_pc': 100
    }
 
-Monte Carlo Uncertainties
--------------------------
+.. _grid-precision:
 
-After fitting, you can estimate uncertainties by perturbing the observed fluxes
-within their measurement errors and re-fitting. The ``fit_mc()`` method draws
-perturbations from a truncated normal distribution (clipped at ±σ_clip) and
-reports asymmetric error bounds from the resulting parameter distributions.
+Precision and Grid Spacing
+--------------------------
 
-.. code-block:: python
+As described in Narayan & Soares-Furtado (2026), *starfuSED* compares the photometry only with model spectra at the native nodes of each atmosphere grid and never interpolates between neighboring models.
+The fitted Teff and log g are therefore discrete: they cannot be determined more finely than the local spacing of the grid near the solution, which is typically 100–250 K in Teff and 0.25–0.5 dex in log g.
+Finer ``teff_step`` or ``logg_step`` values and adaptive refinement do not change this.
 
-   # First, perform the fit
-   fitter = SingleSEDFitter(phot, distance_pc=50, source_params=params)
-   fitter.fit_adaptive(n_refine=2)
+We recommend reporting uncertainties on fitted parameters that are no smaller than one grid step of the model used.
 
-   # Then run Monte Carlo to estimate 3σ uncertainties
-   result = fitter.fit_mc(
-       n_iter=100,      # Number of perturbation iterations
-       sigma_clip=3,    # Perturb within ±3σ
-       seed=42          # For reproducibility
-   )
+Native grid spacing:
 
-   # Asymmetric error bounds
-   err = result['mc_errors']
-   print(f"Teff = {result['teff']} (+{err['teff_err'][1]:.0f}/-{err['teff_err'][0]:.0f}) K")
-   print(f"log g = {result['logg']:.2f} (+{err['logg_err'][1]:.2f}/-{err['logg_err'][0]:.2f})")
-   print(f"Radius = {result['radius_rsun']:.4f} (+{err['radius_rsun_err'][1]:.4f}/-{err['radius_rsun_err'][0]:.4f}) R_sun")
+.. list-table::
+   :header-rows: 1
+   :widths: 15 55 30
 
-   # Raw distributions are available for custom analysis
-   teff_distribution = result['mc_distributions']['teff']
-
-   # Visualize with a ridgeline plot
-   from starfused import plot_mc_ridgeline
-   fig, axes = plot_mc_ridgeline(result)
-
-The same method works for binary fitting:
-
-.. code-block:: python
-
-   fitter = BinarySEDFitter(phot, distance_pc=100,
-                            source1_params=source1, source2_params=source2)
-   fitter.fit_adaptive()
-   result = fitter.fit_mc(n_iter=100, seed=42)
-
-   # Binary errors are prefixed with s1_ and s2_
-   err = result['mc_errors']
-   print(f"Source 1 Teff = {result['source1']['teff']} "
-         f"(+{err['s1_teff_err'][1]:.0f}/-{err['s1_teff_err'][0]:.0f}) K")
-   print(f"Source 2 Teff = {result['source2']['teff']} "
-         f"(+{err['s2_teff_err'][1]:.0f}/-{err['s2_teff_err'][0]:.0f}) K")
-
-How It Works
-~~~~~~~~~~~~
-
-1. Each iteration draws random perturbations from N(0, 1), clips them to ±σ_clip, and scales by the measurement uncertainties.
-2. The perturbed fluxes are fit using the full original parameter grid via ``fit()``.
-3. The min/max of each parameter across all successful iterations gives the asymmetric error bounds.
-4. Since the perturbations span ±σ_clip σ, the reported bounds represent σ_clip-σ uncertainties.
-
-.. note::
-
-   Model spectra are cached from the initial fit, so only the chi-squared
-   evaluation is repeated each iteration. This makes ``fit_mc()`` much faster
-   than running ``fit()`` from scratch each time.
+   * - Grid
+     - Teff spacing
+     - log g spacing
+   * - ``ck04``
+     - 250 K (3500–13000 K); 1000 K (13000–50000 K).
+     - 0.5 dex.
+   * - ``phoenix``
+     - 100 K (2000–7000 K); 200 K (7000–12000 K); 500 K (12000–20000 K); 1000 K (20000–70000 K).
+     - 0.5 dex.
+   * - ``koester``
+     - 250 K (5000–40000 K); 1000 K (40000–80000 K).
+     - 0.25 dex.
+   * - ``bt-settl``
+     - 100 K (400–7000 K).
+     - 0.5 dex.
 
 Convenience Functions
 ---------------------
 
-For quick one-liner fitting:
+For quick one-liner fitting with the standard grid search:
 
 .. code-block:: python
 
@@ -326,9 +293,9 @@ Tips for Good Fits
 Choosing the Normalization Band
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Choose a band where the star dominates (not contaminated by binary companion)
-- Avoid bands with large uncertainties
-- For binaries, pick bands where each component clearly dominates
+- Choose a band where the star dominates (not contaminated by a binary companion).
+- Avoid bands with large photometric errors.
+- For binaries, pick bands where each component clearly dominates.
 
 .. code-block:: python
 
@@ -337,22 +304,15 @@ Choosing the Normalization Band
    source2 = {..., 'norm_band': '2MASS:H'}    # M dwarf
 
    # Bad: Both contribute at optical wavelengths
-   source1 = {..., 'norm_band': 'SDSS:r'}  # Uncertain contribution
-   source2 = {..., 'norm_band': 'SDSS:i'}  # Uncertain contribution
+   source1 = {..., 'norm_band': 'SDSS:r'}  # Both components contribute
+   source2 = {..., 'norm_band': 'SDSS:i'}  # Both components contribute
 
 Setting Parameter Ranges
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Start with wide ranges, then narrow based on initial fits
-- Use adaptive fitting to efficiently search large parameter spaces
-- Check that best-fit is not at edge of grid (suggests wrong range)
-
-Interpreting Chi-Squared
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-- **Reduced χ² ≈ 1**: Good fit
-- **Reduced χ² >> 1**: Poor fit or underestimated uncertainties
-- **Reduced χ² << 1**: Overestimated uncertainties or overfitting
+- Start with wide ranges, then narrow them based on initial fits.
+- Use adaptive fitting to efficiently search large parameter spaces.
+- Check that the best fit is not at the edge of the grid (this suggests the range is wrong).
 
 API Reference
 -------------

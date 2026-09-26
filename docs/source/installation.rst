@@ -23,7 +23,7 @@ Requirements
 Installing from Source
 ----------------------
 
-Clone the repository and install in development mode:
+Clone the repository and install it in editable mode:
 
 .. code-block:: bash
 

@@ -72,8 +72,8 @@ Residual Panel
 
 Residual modes:
 
-- ``'sigma'``: (observed - model) / uncertainty — normalized residuals
-- ``'absolute'``: observed - model — raw flux difference
+- ``'sigma'``: (observed - model) / photometric error — normalized residuals.
+- ``'absolute'``: observed - model — raw flux difference.
 
 Data Point Styling
 ~~~~~~~~~~~~~~~~~~
@@ -188,6 +188,8 @@ Publication-Ready Single Star
 
 .. code-block:: python
 
+   import matplotlib.pyplot as plt
+
    fig, axes = plot_single_sed(
        result, phot,
        figsize=(10, 7),
@@ -262,30 +264,6 @@ Comparing Multiple Fits
 
    plt.tight_layout()
 
-Monte Carlo Ridgeline Plot
---------------------------
-
-After running ``fit_mc()``, visualize the parameter distributions with a ridgeline (joy) plot:
-
-.. code-block:: python
-
-   from starfused import plot_mc_ridgeline
-
-   # Single star
-   fig, axes = plot_mc_ridgeline(result)
-
-   # Binary — auto-detects and shows both sources
-   fig, axes = plot_mc_ridgeline(binary_result)
-
-   # Custom parameters
-   fig, axes = plot_mc_ridgeline(result, params=['teff', 'radius_rjup'])
-
-   # Enable optional markers
-   fig, axes = plot_mc_ridgeline(result, show_best=True, show_percentiles=True)
-
-Each ridge is a KDE-smoothed density of the MC samples for one parameter.
-The function auto-detects single vs binary fits and selects appropriate defaults.
-
 API Reference
 -------------
 
@@ -294,5 +272,3 @@ API Reference
 .. autofunction:: starfused.plot_binary_sed
 
 .. autofunction:: starfused.plot_sed
-
-.. autofunction:: starfused.plot_mc_ridgeline

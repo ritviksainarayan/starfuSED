@@ -70,7 +70,7 @@ The query returns a pandas DataFrame with the following columns:
    * - ``sed_flux``
      - Flux in erg/s/cm²/Å
    * - ``sed_eflux``
-     - Flux uncertainty in erg/s/cm²/Å
+     - Flux error in erg/s/cm²/Å
    * - ``_RAJ2000``
      - Right ascension (J2000)
    * - ``_DEJ2000``
@@ -78,9 +78,9 @@ The query returns a pandas DataFrame with the following columns:
 
 .. note::
 
-   - Flux is automatically converted from Jy to erg/s/cm²/Å
-   - Duplicate filter entries are resolved by keeping the measurement with the lowest uncertainty
-   - Measurements with zero uncertainty are handled by computing the standard deviation of multiple measurements if available
+   - Flux is automatically converted from Jy to erg/s/cm²/Å.
+   - Duplicate filter entries are resolved by keeping the measurement with the smallest flux error.
+   - A zero flux error is replaced by the standard deviation of repeated measurements in the same filter, when available; measurements that still have zero error are dropped.
 
 Dust Extinction Correction
 --------------------------
